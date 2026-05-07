@@ -54,7 +54,7 @@ LDAP_CONFIG = {
     'uri': "ldap://192.168.0.4",
     'base': "DC=local,DC=energoprom,DC=by",
     'bind_dn': "CN=OC1,OU=ОЦ,DC=local,DC=energoprom,DC=by",
-    'bind_password': "Pass5678",
+    'bind_password': "Pass_OC_5678",
     'user_attr': "sAMAccountName"
 }
 
