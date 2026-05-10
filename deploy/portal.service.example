@@ -1,0 +1,19 @@
+# Пример systemd unit (Linux). Положите в /etc/systemd/system/portal.service
+# и поправьте User, WorkingDirectory, пути к venv.
+
+[Unit]
+Description=Enterprise Hub Flask (Gunicorn)
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/PythonProject1111
+Environment=PATH=/opt/PythonProject1111/.venv/bin
+Environment=FLASK_DEBUG=0
+ExecStart=/opt/PythonProject1111/.venv/bin/gunicorn -c deploy/gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

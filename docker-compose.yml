@@ -1,0 +1,12 @@
+# Запуск на сервере: скопировать проект, при необходимости поправить volumes.
+services:
+  web:
+    build: .
+    ports:
+      - "5004:5004"
+    environment:
+      FLASK_DEBUG: "0"
+    volumes:
+      - ./database.db:/app/database.db
+      - ./tabel_portal_cache.json:/app/tabel_portal_cache.json
+    restart: unless-stopped

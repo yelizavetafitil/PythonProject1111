@@ -72,3 +72,27 @@
 1) Пользователи работают только через этот проект (/tabel).
 2) Старый сервис табеля (PythonProject15) после приемки отключается.
 3) Прямой доступ к старому сервису/порту закрывается firewall-правилом.
+
+Размещение на сервере (продакшен)
+-----------------------------------
+На боевом сервере не используйте встроенный сервер Flask в режиме отладки.
+Рекомендуется Gunicorn за reverse proxy (nginx) или контейнер Docker.
+
+1) Установка зависимостей и переменных окружения:
+   export FLASK_DEBUG=0
+   export PORT=5004
+
+2) Запуск через Gunicorn (слушает 127.0.0.1:5004, см. deploy/gunicorn.conf.py):
+   gunicorn -c deploy/gunicorn.conf.py wsgi:app
+
+3) Nginx: скопируйте пример deploy/nginx-site.conf.example и настройте server_name,
+   SSL и proxy_pass на upstream flask_app.
+
+4) systemd: пример юнита — deploy/portal.service.example (поправьте User и пути).
+
+5) Docker на сервере:
+   docker compose build && docker compose up -d
+   При необходимости добавьте в docker-compose.yml том для каталога «БАЗА ЗНАНИЙ»
+   и сетевых путей табеля через переменные окружения.
+
+При SQLite рекомендуется workers=1 в Gunicorn (см. deploy/gunicorn.conf.py).

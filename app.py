@@ -2528,4 +2528,6 @@ if __name__ == '__main__':
     init_db()
     _tabel_load_cache()
     _tabel_rebuild_index_from_cache()
-    app.run(host='0.0.0.0', port=5004, debug=True, threaded=True)
+    port = int(os.environ.get('PORT', '5004'))
+    debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+    app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
