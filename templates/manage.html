@@ -341,6 +341,23 @@
             <p class="small text-muted access-export-hint mt-2 mb-0">
                 Имя файла при выгрузке: дата и время, например <code>access_2026-05-11_08-39-42.json</code>.
             </p>
+            <hr class="my-3 opacity-25">
+            <div class="small fw-bold text-uppercase text-muted mb-2">Полная копия базы (SQLite)</div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button type="button" class="btn btn-primary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="exportDatabaseFile()">
+                    <i data-lucide="database" size="16"></i>
+                    <span>Скачать базу (.db)</span>
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="document.getElementById('dbImportInput').click()">
+                    <i data-lucide="upload" size="16"></i>
+                    <span>Загрузить базу (.db)</span>
+                </button>
+                <input type="file" id="dbImportInput" accept=".db,application/octet-stream,application/x-sqlite3" class="d-none" onchange="importDatabaseFile(this)">
+            </div>
+            <p class="small text-muted access-export-hint mt-2 mb-0">
+                Перед заменой текущая база сохраняется рядом в файл <code>database_before_import_…</code>.
+                Импорт недоступен, если файл <code>database.db</code> занят другим процессом; на продакшене лучше остановить воркеры на время замены.
+            </p>
         </div>
     </div>
     <div class="row g-4">
@@ -482,7 +499,8 @@
             'chevron-left': '<polyline points="15 18 9 12 15 6"></polyline>',
             layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline>',
             download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
-            upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>'
+            upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>',
+            database: '<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path>'
         };
         document.querySelectorAll('[data-lucide]').forEach((el) => {
             const name = el.getAttribute('data-lucide');
@@ -666,6 +684,67 @@
         await loadResourceAccess();
         await loadAiAccess();
         renderIcons();
+    }
+
+    async function exportDatabaseFile() {
+        const r = await fetch('/api/admin/export-database');
+        if (!r.ok) {
+            let msg = 'Не удалось сформировать файл.';
+            try {
+                const j = await r.json();
+                if (j.error) msg = j.error;
+            } catch (e) { /* ignore */ }
+            showInfo('База данных', msg);
+            return;
+        }
+        const cd = r.headers.get('Content-Disposition') || '';
+        let fname = '';
+        const m = cd.match(/filename="([^"]+)"/);
+        if (m) fname = m[1];
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fname || 'database.db';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    async function importDatabaseFile(input) {
+        const file = input.files && input.files[0];
+        input.value = '';
+        if (!file) return;
+        const ok = await showAdminConfirm(
+            'Замена базы данных',
+            'Текущая база SQLite будет заменена выбранным файлом. Перед заменой текущая база копируется в файл database_before_import_<дата>_<время>.db в каталоге приложения. После успешного импорта перезагрузите страницу (F5).',
+            'Заменить базу'
+        );
+        if (!ok) return;
+        let buf;
+        try {
+            buf = await file.arrayBuffer();
+        } catch (e) {
+            showInfo('Импорт базы', 'Не удалось прочитать файл.');
+            return;
+        }
+        const r = await fetch('/api/admin/import-database', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: buf,
+        });
+        let j;
+        try {
+            j = await r.json();
+        } catch (e) {
+            showInfo('Импорт базы', 'Некорректный ответ сервера.');
+            return;
+        }
+        if (!j.success) {
+            showInfo('Импорт базы', j.error || 'Ошибка импорта.');
+            return;
+        }
+        const extra = j.backup_file ? (' Резервная копия: ' + j.backup_file + '.') : '';
+        showInfo('Импорт базы', 'Файл базы заменён.' + extra + ' Перезагрузите страницу (F5).');
     }
 
     async function searchAD(groupId) {

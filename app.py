@@ -7,6 +7,7 @@ import hmac
 import hashlib
 import time
 import threading
+import tempfile
 import calendar
 import smtplib
 from email.message import EmailMessage
@@ -2801,6 +2802,152 @@ def import_access_permissions():
             'ai_privileged': len(ai_in),
         },
     )
+
+
+def _validate_portal_sqlite_file(path):
+    """Проверка целостности и минимальной схемы перед заменой рабочей БД."""
+    try:
+        conn = sqlite3.connect(path, timeout=30)
+    except sqlite3.Error as exc:
+        return False, f'Не удалось открыть файл как SQLite: {exc}'
+    try:
+        row = conn.execute('PRAGMA integrity_check').fetchone()
+        if not row or row[0] != 'ok':
+            return False, (row[0] if row else 'Ошибка проверки целостности')
+        n = conn.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' "
+            "AND name IN ('resources','groups','meeting_rooms')"
+        ).fetchone()[0]
+        if int(n) < 3:
+            return False, 'Файл не похож на базу этого приложения (нет ключевых таблиц).'
+        return True, None
+    finally:
+        conn.close()
+
+
+def _build_database_export_bytes():
+    """Онлайн-копия SQLite через backup API (без обрыва записей в WAL)."""
+    abs_path = os.path.abspath(DB_PATH)
+    if not os.path.isfile(abs_path):
+        return None, 'Файл базы не найден на сервере'
+    fd, tmp_path = tempfile.mkstemp(suffix='.db')
+    os.close(fd)
+    src = sqlite3.connect(abs_path, timeout=30)
+    try:
+        dst = sqlite3.connect(tmp_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
+    try:
+        with open(tmp_path, 'rb') as f:
+            data = f.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+    return data, None
+
+
+def _remove_db_wal_shm(db_path):
+    for suf in ('-wal', '-shm'):
+        p = db_path + suf
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+
+def _wal_checkpoint_truncate_and_remove_sidecars(db_path):
+    if not os.path.isfile(db_path):
+        return
+    try:
+        conn = sqlite3.connect(db_path, timeout=30)
+    except sqlite3.Error:
+        return
+    try:
+        try:
+            conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        except sqlite3.Error:
+            pass
+        conn.commit()
+    finally:
+        conn.close()
+    _remove_db_wal_shm(db_path)
+
+
+@app.route('/api/admin/export-database', methods=['GET'])
+def export_database_file():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    data, err = _build_database_export_bytes()
+    if err:
+        return jsonify(success=False, error=err), 400
+    fname = datetime.now(APP_TZ).strftime('database_%Y-%m-%d_%H-%M-%S.db')
+    resp = Response(data, mimetype='application/x-sqlite3')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@app.route('/api/admin/import-database', methods=['POST'])
+def import_database_file():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    raw = request.get_data()
+    if not raw or len(raw) < 512:
+        return jsonify(success=False, error='Слишком маленький файл или пустое тело запроса'), 400
+
+    abs_path = os.path.abspath(DB_PATH)
+    ddir = os.path.dirname(abs_path) or '.'
+    staging = os.path.join(ddir, f'.import_db_{os.getpid()}_{threading.get_ident()}.tmp')
+    auto_backup = None
+    try:
+        with open(staging, 'wb') as f:
+            f.write(raw)
+
+        ok, verr = _validate_portal_sqlite_file(staging)
+        if not ok:
+            return jsonify(success=False, error=verr or 'Файл не прошёл проверку'), 400
+
+        ts = datetime.now(APP_TZ).strftime('%Y-%m-%d_%H-%M-%S')
+        if os.path.isfile(abs_path):
+            auto_backup = os.path.join(ddir, f'database_before_import_{ts}.db')
+            src_live = sqlite3.connect(abs_path, timeout=30)
+            try:
+                bak_dst = sqlite3.connect(auto_backup)
+                try:
+                    src_live.backup(bak_dst)
+                finally:
+                    bak_dst.close()
+            finally:
+                src_live.close()
+
+        _wal_checkpoint_truncate_and_remove_sidecars(abs_path)
+        os.replace(staging, abs_path)
+        staging = None
+        _remove_db_wal_shm(abs_path)
+
+        return jsonify(
+            success=True,
+            backup_file=os.path.basename(auto_backup) if auto_backup else None,
+        )
+    except PermissionError as exc:
+        return jsonify(
+            success=False,
+            error=f'Нет доступа к файлу базы (возможно, файл занят другим процессом): {exc}',
+        ), 503
+    except OSError as exc:
+        return jsonify(success=False, error=str(exc)), 500
+    finally:
+        if staging and os.path.isfile(staging):
+            try:
+                os.unlink(staging)
+            except OSError:
+                pass
 
 
 @app.route('/manage_ai_access', methods=['POST'])
