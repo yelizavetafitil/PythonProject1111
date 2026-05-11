@@ -18,7 +18,18 @@ from urllib.parse import urlencode
 from datetime import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
-from flask import Flask, render_template, request, session, jsonify, redirect, url_for, send_from_directory, send_file
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+    url_for,
+)
 import pandas as pd
 import openpyxl
 try:
@@ -2486,6 +2497,310 @@ def get_ai_access_entities():
         return jsonify([{'type': row['entity_type'], 'login': row['entity_login']} for row in rows])
     finally:
         conn.close()
+
+
+ACCESS_EXPORT_TYPE = 'belnipi_access'
+ACCESS_EXPORT_VERSION = 1
+
+
+def _build_access_export_payload(conn):
+    groups_rows = conn.execute('SELECT id, name FROM groups ORDER BY name COLLATE NOCASE').fetchall()
+    groups_out = [{'name': row['name']} for row in groups_rows]
+
+    members_rows = conn.execute(
+        '''
+        SELECT gm.username, g.name AS group_name
+        FROM group_members gm
+        JOIN groups g ON g.id = gm.group_id
+        ORDER BY g.name COLLATE NOCASE, gm.username COLLATE NOCASE
+        '''
+    ).fetchall()
+    group_members_out = [
+        {'group_name': row['group_name'], 'username': row['username']} for row in members_rows
+    ]
+
+    cat_rows = conn.execute('SELECT name FROM categories ORDER BY name COLLATE NOCASE').fetchall()
+    categories_out = [{'name': row['name']} for row in cat_rows]
+
+    res_rows = conn.execute(
+        '''
+        SELECT r.id, r.title, r.url, r.category, r.desc, r.position,
+               GROUP_CONCAT(g.name) AS group_names
+        FROM resources r
+        LEFT JOIN resource_group_access ga ON ga.resource_id = r.id
+        LEFT JOIN groups g ON g.id = ga.group_id
+        GROUP BY r.id
+        ORDER BY r.position ASC, r.id ASC
+        '''
+    ).fetchall()
+    resources_out = []
+    for row in res_rows:
+        raw_names = row['group_names'] or ''
+        gnames = [x.strip() for x in raw_names.split(',') if x and x.strip()]
+        resources_out.append({
+            'title': row['title'],
+            'url': normalize_resource_url(row['url'] or ''),
+            'category': (row['category'] or '').strip(),
+            'desc': row['desc'],
+            'position': row['position'] if row['position'] is not None else 0,
+            'groups': gnames,
+        })
+
+    def privileged(table):
+        rows = conn.execute(
+            f'SELECT entity_type, entity_login FROM {table} ORDER BY entity_type, entity_login COLLATE NOCASE'
+        ).fetchall()
+        return [{'type': r['entity_type'], 'login': r['entity_login']} for r in rows]
+
+    exported_at = datetime.now(APP_TZ).isoformat(timespec='seconds')
+    return {
+        'export_type': ACCESS_EXPORT_TYPE,
+        'version': ACCESS_EXPORT_VERSION,
+        'exported_at': exported_at,
+        'groups': groups_out,
+        'group_members': group_members_out,
+        'categories': categories_out,
+        'resources': resources_out,
+        'phonebook_privileged_entities': privileged('phonebook_privileged_entities'),
+        'booking_privileged_entities': privileged('booking_privileged_entities'),
+        'resource_privileged_entities': privileged('resource_privileged_entities'),
+        'ai_privileged_entities': privileged('ai_privileged_entities'),
+    }
+
+
+@app.route('/api/admin/export-access', methods=['GET'])
+def export_access_permissions():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    conn = get_db_connection()
+    try:
+        payload = _build_access_export_payload(conn)
+    finally:
+        conn.close()
+    body = json.dumps(payload, ensure_ascii=False, indent=2)
+    fname = datetime.now(APP_TZ).strftime('access_%Y-%m-%d_%H-%M-%S.json')
+    resp = Response(
+        body + '\n',
+        mimetype='application/json; charset=utf-8',
+    )
+    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@app.route('/api/admin/import-access', methods=['POST'])
+def import_access_permissions():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    raw = request.get_data(as_text=True) or ''
+    if not raw.strip():
+        return jsonify(success=False, error='Пустой файл'), 400
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return jsonify(success=False, error='Некорректный JSON'), 400
+    if data.get('export_type') != ACCESS_EXPORT_TYPE:
+        return jsonify(success=False, error='Неизвестный тип файла (ожидается belnipi_access)'), 400
+    if int(data.get('version') or 0) != ACCESS_EXPORT_VERSION:
+        return jsonify(success=False, error='Неподдерживаемая версия экспорта'), 400
+
+    def as_obj_list(key, name_key='name'):
+        items = data.get(key) or []
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            if isinstance(item, str):
+                name = item.strip()
+                if name:
+                    out.append({name_key: name})
+            elif isinstance(item, dict):
+                name = (item.get(name_key) or item.get('name') or '').strip()
+                if name:
+                    copy = dict(item)
+                    copy[name_key] = name
+                    out.append(copy)
+        return out
+
+    def as_member_list():
+        items = data.get('group_members') or []
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            gn = (item.get('group_name') or '').strip()
+            un = (item.get('username') or '').strip()
+            if gn and un:
+                out.append({'group_name': gn, 'username': un})
+        return out
+
+    def as_privileged(key):
+        items = data.get(key) or []
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            et = (item.get('type') or 'user').strip().lower()
+            if et not in ('user', 'group'):
+                et = 'user'
+            el = (item.get('login') or '').strip()
+            if not el:
+                continue
+            if et == 'user':
+                el = normalize_ad_username(el)
+            else:
+                el = el.lower()
+            if el:
+                out.append((et, el))
+        return out
+
+    def as_resources():
+        items = data.get('resources') or []
+        if not isinstance(items, list):
+            return []
+        out = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = item.get('title') or ''
+            url = normalize_resource_url((item.get('url') or '').strip())
+            category = (item.get('category') or '').strip()
+            if not category:
+                continue
+            desc = item.get('desc')
+            try:
+                position = int(item.get('position') or 0)
+            except (TypeError, ValueError):
+                position = 0
+            gnames = item.get('groups') or []
+            if isinstance(gnames, str):
+                gnames = [gnames]
+            if not isinstance(gnames, list):
+                gnames = []
+            gnames = [str(x).strip() for x in gnames if str(x).strip()]
+            out.append({
+                'title': title,
+                'url': url,
+                'category': category,
+                'desc': desc,
+                'position': position,
+                'groups': gnames,
+            })
+        return out
+
+    groups_in = as_obj_list('groups', 'name')
+    members_in = as_member_list()
+    categories_in = as_obj_list('categories', 'name')
+    resources_in = as_resources()
+    phone_in = as_privileged('phonebook_privileged_entities')
+    booking_in = as_privileged('booking_privileged_entities')
+    resource_in = as_privileged('resource_privileged_entities')
+    ai_in = as_privileged('ai_privileged_entities')
+
+    conn = get_db_connection()
+    try:
+        conn.execute('BEGIN')
+        conn.execute('DELETE FROM resource_group_access')
+        conn.execute('DELETE FROM group_members')
+        conn.execute('DELETE FROM phonebook_privileged_entities')
+        conn.execute('DELETE FROM booking_privileged_entities')
+        conn.execute('DELETE FROM resource_privileged_entities')
+        conn.execute('DELETE FROM ai_privileged_entities')
+
+        for row in groups_in:
+            conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (row['name'],))
+
+        for row in categories_in:
+            conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', (row['name'],))
+
+        for row in members_in:
+            gid = conn.execute('SELECT id FROM groups WHERE name = ?', (row['group_name'],)).fetchone()
+            if not gid:
+                conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (row['group_name'],))
+                gid = conn.execute('SELECT id FROM groups WHERE name = ?', (row['group_name'],)).fetchone()
+            if gid:
+                conn.execute(
+                    'INSERT OR IGNORE INTO group_members (group_id, username) VALUES (?, ?)',
+                    (gid['id'], row['username']),
+                )
+
+        for res in resources_in:
+            row = conn.execute(
+                '''
+                SELECT id FROM resources
+                WHERE TRIM(url) = TRIM(?) AND TRIM(category) = TRIM(?)
+                ORDER BY id ASC LIMIT 1
+                ''',
+                (res['url'], res['category']),
+            ).fetchone()
+            if row:
+                rid = row['id']
+                conn.execute(
+                    'UPDATE resources SET title = ?, url = ?, category = ?, desc = ?, position = ? WHERE id = ?',
+                    (res['title'], res['url'], res['category'], res['desc'], res['position'], rid),
+                )
+            else:
+                cur = conn.execute(
+                    'INSERT INTO resources (title, url, category, desc, position) VALUES (?, ?, ?, ?, ?)',
+                    (res['title'], res['url'], res['category'], res['desc'], res['position']),
+                )
+                rid = cur.lastrowid
+            conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', (res['category'],))
+            for gname in res['groups']:
+                gid = conn.execute('SELECT id FROM groups WHERE name = ?', (gname,)).fetchone()
+                if not gid:
+                    conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (gname,))
+                    gid = conn.execute('SELECT id FROM groups WHERE name = ?', (gname,)).fetchone()
+                if gid:
+                    conn.execute(
+                        'INSERT OR IGNORE INTO resource_group_access (resource_id, group_id) VALUES (?, ?)',
+                        (rid, gid['id']),
+                    )
+
+        for et, el in phone_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO phonebook_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
+        for et, el in booking_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO booking_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
+        for et, el in resource_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO resource_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
+        for et, el in ai_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO ai_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
+
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        return jsonify(success=False, error=str(exc)), 400
+    finally:
+        conn.close()
+
+    return jsonify(
+        success=True,
+        imported={
+            'groups': len(groups_in),
+            'group_members': len(members_in),
+            'categories': len(categories_in),
+            'resources': len(resources_in),
+            'phonebook_privileged': len(phone_in),
+            'booking_privileged': len(booking_in),
+            'resource_privileged': len(resource_in),
+            'ai_privileged': len(ai_in),
+        },
+    )
 
 
 @app.route('/manage_ai_access', methods=['POST'])
