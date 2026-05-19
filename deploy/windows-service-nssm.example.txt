@@ -1,0 +1,26 @@
+# Пример запуска портала на Windows Server под AD-учёткой с доступом к \\srv-doc
+# Инструмент: NSSM (https://nssm.cc/) — «Non-Sucking Service Manager»
+#
+# 1) Установить NSSM, открыть cmd от администратора
+# 2) Проверить пути (поправить под ваш сервер):
+#    PROJECT=C:\apps\PythonProject1111
+#    VENV=%PROJECT%\.venv\Scripts\python.exe
+#    SVC_USER=ENERGOPROM\svc-portal
+#
+# 3) Учётке SVC_USER на srv-doc выдан Read на \\srv-doc\ТАБЕЛЬ
+#
+# 4) Создать службу:
+# pip install waitress  (Gunicorn на Windows не поддерживается)
+# nssm install BelnipiPortal "%PROJECT%\.venv\Scripts\waitress-serve.exe" "--listen=0.0.0.0:5004" "wsgi:app"
+# или:
+# nssm install BelnipiPortal "%PROJECT%\.venv\Scripts\python.exe" "-m" "waitress" "--listen=0.0.0.0:5004" "wsgi:app"
+# nssm set BelnipiPortal AppDirectory %PROJECT%
+# nssm set BelnipiPortal ObjectName %SVC_USER% <пароль_учётки>
+# nssm set BelnipiPortal AppEnvironmentExtra FLASK_DEBUG=0^&TABEL_BASE_DIR=\\srv-doc\ТАБЕЛЬ^&TABEL_LEADERS_FILE=\\srv-doc\ТАБЕЛЬ\ОЦ\Список руководителей.xlsx
+#
+# Альтернатива без Gunicorn на Windows (только для теста, не для нагрузки):
+# nssm install BelnipiPortal "%PROJECT%\.venv\Scripts\python.exe" "app.py"
+# (в app.py при FLASK_DEBUG=0 лучше всё равно использовать waitress/gunicorn)
+#
+# 5) nssm start BelnipiPortal
+# 6) Проверка: http://<сервер>:5004/tabel → Диагностика

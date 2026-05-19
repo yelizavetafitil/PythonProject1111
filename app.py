@@ -8,6 +8,7 @@ import hashlib
 import time
 import threading
 import tempfile
+import getpass
 import calendar
 import smtplib
 from email.message import EmailMessage
@@ -71,6 +72,7 @@ LDAP_CONFIG = {
 }
 
 MASTER_ADMINS = ['rapeiko', 'oc1']
+DEFAULT_USERS_GROUP_NAME = 'Пользователи'
 DB_PATH = 'database.db'
 GYM_ROOM_NAME = 'Спортзал'
 LOGO_FILENAME = 'image2_hq.png'
@@ -107,6 +109,8 @@ TABEL_LEADERS_CACHE = {}
 TABEL_LEADERS_MTIME = 0.0
 TABEL_LAST_SCAN_TS = 0.0
 TABEL_SCAN_INTERVAL_SEC = 180
+TABEL_LAST_SCAN_ERRORS = []
+TABEL_LAST_SCAN_STATS = {}
 KNOWLEDGE_BASE_ROOT = os.environ.get('KNOWLEDGE_BASE_ROOT', os.path.join(app.root_path, 'БАЗА ЗНАНИЙ'))
 KNOWLEDGE_BASE_INSTRUCTIONS_DIR = os.environ.get(
     'KNOWLEDGE_BASE_INSTRUCTIONS_DIR',
@@ -217,62 +221,142 @@ def _tabel_rebuild_index_from_cache():
 
 
 def _scan_tabel_base_dir():
-    global TABEL_FILE_CACHE
+    global TABEL_FILE_CACHE, TABEL_LAST_SCAN_ERRORS, TABEL_LAST_SCAN_STATS
     current_year = datetime.now().year
     found_files = set()
     cache_updated = False
-    for root, _, files in os.walk(TABEL_BASE_DIR):
-        rel = os.path.relpath(root, TABEL_BASE_DIR)
-        dept = rel.split(os.sep)[0] if rel != '.' else 'Общий'
-        for filename in files:
-            if not filename.lower().endswith(('.xls', '.xlsx')) or filename.startswith('~$'):
-                continue
-            mm, yy = _tabel_parse_filename(filename)
-            if not mm:
-                continue
-            try:
-                if 2000 + int(yy) < current_year - 1:
+    errors = []
+    stats = {
+        'files_matched': 0,
+        'files_parsed': 0,
+        'files_skipped_cache': 0,
+        'files_failed': 0,
+        'employees_indexed': 0,
+    }
+
+    if not os.path.exists(TABEL_BASE_DIR):
+        errors.append({
+            'stage': 'base_dir',
+            'path': TABEL_BASE_DIR,
+            'message': 'Каталог не найден или недоступен по сети',
+        })
+    else:
+        try:
+            os.listdir(TABEL_BASE_DIR)
+        except OSError as exc:
+            errors.append({
+                'stage': 'base_dir',
+                'path': TABEL_BASE_DIR,
+                'message': f'Нет прав на чтение каталога: {exc}',
+            })
+
+    try:
+        walk_roots = [TABEL_BASE_DIR] if os.path.exists(TABEL_BASE_DIR) else []
+        for root, _, files in os.walk(TABEL_BASE_DIR) if walk_roots else []:
+            rel = os.path.relpath(root, TABEL_BASE_DIR)
+            dept = rel.split(os.sep)[0] if rel != '.' else 'Общий'
+            for filename in files:
+                if not filename.lower().endswith(('.xls', '.xlsx')) or filename.startswith('~$'):
                     continue
-            except Exception:
-                continue
-            full_path = os.path.join(root, filename)
-            found_files.add(full_path)
-            try:
-                current_mtime = os.path.getmtime(full_path)
-            except OSError:
-                continue
-            cached = TABEL_FILE_CACHE.get(full_path)
-            if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
-                continue
-            df = _tabel_read_any_excel(full_path)
-            if df is None:
-                continue
-            employees = []
-            try:
-                for row_index, raw_name in enumerate(df.iloc[:, 1]):
-                    name = _tabel_clean_fio(raw_name)
-                    if not name or not TABEL_FIO_RE.match(name):
+                mm, yy = _tabel_parse_filename(filename)
+                if not mm:
+                    continue
+                try:
+                    if 2000 + int(yy) < current_year - 1:
                         continue
-                    row_data = df.iloc[row_index].values
-                    days_data = []
-                    for day_idx in range(31):
-                        col_idx = 2 + day_idx
-                        if col_idx < len(row_data):
-                            day_val = row_data[col_idx]
-                            days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
-                        else:
-                            days_data.append('')
-                    employees.append({'fio': name, 'days': days_data})
-            except Exception:
-                continue
-            if employees:
-                TABEL_FILE_CACHE[full_path] = {
-                    'mtime': current_mtime,
-                    'dept': dept,
-                    'yy_mm': f'{yy}_{mm}',
-                    'emps': employees
-                }
-                cache_updated = True
+                except Exception:
+                    continue
+                full_path = os.path.join(root, filename)
+                found_files.add(full_path)
+                stats['files_matched'] += 1
+                try:
+                    current_mtime = os.path.getmtime(full_path)
+                except OSError as exc:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'mtime',
+                        'path': full_path,
+                        'message': str(exc),
+                    })
+                    continue
+                cached = TABEL_FILE_CACHE.get(full_path)
+                if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
+                    stats['files_skipped_cache'] += 1
+                    stats['employees_indexed'] += len(cached.get('emps') or [])
+                    continue
+                df = _tabel_read_any_excel(full_path)
+                if df is None:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'read_excel',
+                        'path': full_path,
+                        'message': f'Не удалось прочитать лист «{TABEL_SHEET_NAME}»',
+                    })
+                    continue
+                employees = []
+                try:
+                    for row_index, raw_name in enumerate(df.iloc[:, 1]):
+                        name = _tabel_clean_fio(raw_name)
+                        if not name or not TABEL_FIO_RE.match(name):
+                            continue
+                        row_data = df.iloc[row_index].values
+                        days_data = []
+                        for day_idx in range(31):
+                            col_idx = 2 + day_idx
+                            if col_idx < len(row_data):
+                                day_val = row_data[col_idx]
+                                days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
+                            else:
+                                days_data.append('')
+                        employees.append({'fio': name, 'days': days_data})
+                except Exception as exc:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'parse_rows',
+                        'path': full_path,
+                        'message': str(exc),
+                    })
+                    continue
+                if employees:
+                    TABEL_FILE_CACHE[full_path] = {
+                        'mtime': current_mtime,
+                        'dept': dept,
+                        'yy_mm': f'{yy}_{mm}',
+                        'emps': employees
+                    }
+                    cache_updated = True
+                    stats['files_parsed'] += 1
+                    stats['employees_indexed'] += len(employees)
+                else:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'empty_sheet',
+                        'path': full_path,
+                        'message': 'В файле нет строк с ФИО в ожидаемом формате',
+                    })
+    except OSError as exc:
+        errors.append({
+            'stage': 'walk',
+            'path': TABEL_BASE_DIR,
+            'message': str(exc),
+        })
+
+    if not os.path.exists(TABEL_LEADERS_FILE):
+        errors.append({
+            'stage': 'leaders_file',
+            'path': TABEL_LEADERS_FILE,
+            'message': 'Файл списка руководителей не найден',
+        })
+    else:
+        try:
+            openpyxl.load_workbook(TABEL_LEADERS_FILE, read_only=True, data_only=True).close()
+        except Exception as exc:
+            errors.append({
+                'stage': 'leaders_file',
+                'path': TABEL_LEADERS_FILE,
+                'message': f'Не удалось открыть: {exc}',
+            })
+
     deleted_files = set(TABEL_FILE_CACHE.keys()) - found_files
     if deleted_files:
         for deleted_path in deleted_files:
@@ -281,6 +365,8 @@ def _scan_tabel_base_dir():
     if cache_updated:
         _tabel_save_cache()
     _tabel_rebuild_index_from_cache()
+    TABEL_LAST_SCAN_ERRORS = errors[-100:]
+    TABEL_LAST_SCAN_STATS = stats
 
 
 def ensure_tabel_index(force=False):
@@ -294,6 +380,160 @@ def ensure_tabel_index(force=False):
             return
     _scan_tabel_base_dir()
     TABEL_LAST_SCAN_TS = time.time()
+
+
+def _tabel_index_summary():
+    departments = []
+    periods = set()
+    employees = set()
+    with TABEL_INDEX_LOCK:
+        for dept_name, dep_periods in TABEL_INDEX.items():
+            dept_periods_list = sorted(dep_periods.keys())
+            periods.update(dep_periods_list)
+            dept_employees = set()
+            for period_key, records in dep_periods.items():
+                for record in records:
+                    for emp in record.get('employees', []):
+                        fio = emp.get('fio')
+                        if fio:
+                            employees.add(fio)
+                            dept_employees.add(fio)
+            departments.append({
+                'name': dept_name,
+                'periods': dept_periods_list,
+                'employees': len(dept_employees),
+            })
+    return {
+        'departments': len(departments),
+        'department_list': departments,
+        'periods': sorted(periods, reverse=True),
+        'unique_employees': len(employees),
+    }
+
+
+def get_tabel_file_access_identity():
+    """
+    Учётная запись ОС, под которой процесс читает UNC-пути (\\\\srv-doc\\...).
+    Это НЕ логин пользователя, вошедшего на портал через LDAP.
+    """
+    win_user = (os.environ.get('USERNAME') or '').strip()
+    win_domain = (os.environ.get('USERDOMAIN') or '').strip()
+    process_user = (getpass.getuser() or '').strip()
+    if win_domain and win_user:
+        display = f'{win_domain}\\{win_user}'
+    else:
+        display = process_user or 'не определено'
+    return {
+        'display': display,
+        'process_user': process_user,
+        'windows_username': win_user,
+        'windows_domain': win_domain,
+        'computer_name': (os.environ.get('COMPUTERNAME') or '').strip(),
+        'ldap_bind_note': (
+            'Учётка LDAP из настроек приложения (bind_dn) используется только для '
+            'входа на портал и поиска в AD, не для чтения папки табелей.'
+        ),
+        'access_note': (
+            'Сетевые папки табеля читает сервер под учётной записью процесса '
+            '(python app.py, Gunicorn, служба Windows). Ей на srv-doc нужны права '
+            'на чтение \\\\srv-doc\\ТАБЕЛЬ и файла списка руководителей.'
+        ),
+    }
+
+
+def build_tabel_diagnostics(force_scan=False, portal_username=None):
+    if force_scan:
+        ensure_tabel_index(force=True)
+    else:
+        ensure_tabel_index()
+    checks = []
+    file_access = get_tabel_file_access_identity()
+    portal_login = normalize_ad_username(portal_username or '')
+    portal_can_view = bool(portal_login and can_view_tabel(portal_username))
+    portal_is_master = portal_login in MASTER_ADMINS
+
+    def add_check(name, ok, detail='', **extra):
+        checks.append({'name': name, 'ok': bool(ok), 'detail': detail, **extra})
+
+    if portal_login:
+        portal_detail = portal_login
+        if portal_is_master:
+            portal_detail += ' (мастер-администратор — доступ к табелю всегда)'
+        add_check(
+            'Доступ к странице табеля (ваш вход на портал)',
+            portal_can_view,
+            portal_detail,
+        )
+
+    add_check(
+        'Учётная запись сервера для \\\\srv-doc',
+        True,
+        file_access['display'],
+    )
+
+    add_check(
+        'Каталог табелей (TABEL_BASE_DIR)',
+        os.path.exists(TABEL_BASE_DIR),
+        TABEL_BASE_DIR,
+        env='TABEL_BASE_DIR',
+    )
+    if os.path.exists(TABEL_BASE_DIR):
+        try:
+            sample = os.listdir(TABEL_BASE_DIR)[:5]
+            add_check('Чтение каталога табелей', True, f'Примеры в корне: {", ".join(sample) or "(пусто)"}')
+        except OSError as exc:
+            add_check('Чтение каталога табелей', False, str(exc))
+
+    add_check(
+        'Список руководителей (TABEL_LEADERS_FILE)',
+        os.path.exists(TABEL_LEADERS_FILE),
+        TABEL_LEADERS_FILE,
+        env='TABEL_LEADERS_FILE',
+    )
+    cache_exists = os.path.exists(TABEL_CACHE_FILE)
+    cache_size = os.path.getsize(TABEL_CACHE_FILE) if cache_exists else 0
+    add_check(
+        'Локальный кэш табелей',
+        cache_exists,
+        f'{TABEL_CACHE_FILE} ({cache_size} байт)' if cache_exists else f'Файл {TABEL_CACHE_FILE} ещё не создан',
+        env='TABEL_CACHE_FILE',
+    )
+    add_check('Лист Excel', True, TABEL_SHEET_NAME, env='TABEL_SHEET_NAME')
+
+    last_scan_label = (
+        datetime.fromtimestamp(TABEL_LAST_SCAN_TS, APP_TZ).strftime('%d.%m.%Y %H:%M:%S')
+        if TABEL_LAST_SCAN_TS
+        else 'ещё не выполнялось'
+    )
+    index_summary = _tabel_index_summary()
+    files_ok = (
+        os.path.exists(TABEL_BASE_DIR)
+        and os.path.exists(TABEL_LEADERS_FILE)
+        and index_summary['unique_employees'] > 0
+        and not TABEL_LAST_SCAN_ERRORS
+    )
+    return {
+        'checked_at': datetime.now(APP_TZ).isoformat(timespec='seconds'),
+        'ok': files_ok,
+        'files_ok': files_ok,
+        'portal_access': {
+            'login': portal_login,
+            'can_view': portal_can_view,
+            'is_master_admin': portal_is_master,
+        },
+        'file_access_identity': file_access,
+        'paths': {
+            'base_dir': TABEL_BASE_DIR,
+            'leaders_file': TABEL_LEADERS_FILE,
+            'cache_file': os.path.abspath(TABEL_CACHE_FILE),
+            'sheet_name': TABEL_SHEET_NAME,
+        },
+        'checks': checks,
+        'last_scan_at': last_scan_label,
+        'last_scan_stats': dict(TABEL_LAST_SCAN_STATS),
+        'last_scan_errors': list(TABEL_LAST_SCAN_ERRORS),
+        'index': index_summary,
+    }
 
 
 def _tabel_get_current_status(fio):
@@ -373,6 +613,77 @@ def get_db_connection():
     conn.execute('PRAGMA journal_mode=WAL;')
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def get_users_group_id(conn):
+    row = conn.execute(
+        'SELECT id FROM groups WHERE name = ? COLLATE NOCASE',
+        (DEFAULT_USERS_GROUP_NAME,),
+    ).fetchone()
+    return row['id'] if row else None
+
+
+def ensure_default_users_group(conn):
+    conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (DEFAULT_USERS_GROUP_NAME,))
+
+
+def add_user_to_default_group(conn, username):
+    login = normalize_ad_username(username)
+    if not login:
+        return
+    ensure_default_users_group(conn)
+    group_id = get_users_group_id(conn)
+    if not group_id:
+        return
+    conn.execute(
+        'INSERT OR IGNORE INTO group_members (group_id, username) VALUES (?, ?)',
+        (group_id, login),
+    )
+
+
+def fetch_all_ad_usernames():
+    usernames = set()
+    server = Server(LDAP_CONFIG['uri'], get_info=ALL, connect_timeout=10)
+    conn = Connection(
+        server,
+        user=LDAP_CONFIG['bind_dn'],
+        password=LDAP_CONFIG['bind_password'],
+        auto_bind=True,
+    )
+    search_filter = '(&(objectCategory=person)(objectClass=user)(sAMAccountName=*))'
+    conn.search(
+        LDAP_CONFIG['base'],
+        search_filter,
+        SUBTREE,
+        attributes=['sAMAccountName'],
+    )
+    for entry in conn.entries:
+        if entry.sAMAccountName:
+            login = normalize_ad_username(str(entry.sAMAccountName))
+            if login:
+                usernames.add(login)
+    return sorted(usernames)
+
+
+def sync_all_ad_users_to_default_group(conn):
+    ensure_default_users_group(conn)
+    group_id = get_users_group_id(conn)
+    if not group_id:
+        return 0
+    try:
+        usernames = fetch_all_ad_usernames()
+    except Exception as exc:
+        app.logger.warning('AD sync for default users group failed: %s', exc)
+        return 0
+    added = 0
+    for login in usernames:
+        cur = conn.execute(
+            'INSERT OR IGNORE INTO group_members (group_id, username) VALUES (?, ?)',
+            (group_id, login),
+        )
+        if cur.rowcount:
+            added += 1
+    return added
 
 
 def ensure_gym_room_exists():
@@ -471,6 +782,16 @@ def can_use_ai_assistant(username):
     if login in MASTER_ADMINS:
         return True
     return _has_privileged_entity_access(login, 'ai_privileged_entities')
+
+
+def can_view_tabel(username):
+    """Доступ к /tabel — только записи из tabel_privileged_entities и мастер-админы."""
+    login = normalize_ad_username(username)
+    if not login:
+        return False
+    if login in MASTER_ADMINS:
+        return True
+    return _has_privileged_entity_access(login, 'tabel_privileged_entities')
 
 
 def _build_ai_sso_url(username, display_name):
@@ -680,6 +1001,12 @@ def init_db():
                 entity_login TEXT NOT NULL,
                 PRIMARY KEY (entity_type, entity_login)
             )''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS tabel_privileged_entities (
+                entity_type TEXT NOT NULL,
+                entity_login TEXT NOT NULL,
+                PRIMARY KEY (entity_type, entity_login)
+            )''')
         # Миграция старого формата (только пользователи) в новый универсальный справочник.
         legacy_rows = conn.execute('SELECT username FROM phonebook_privileged_users').fetchall()
         for row in legacy_rows:
@@ -768,7 +1095,18 @@ def init_db():
                 )
             )
             conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', ('Сервисы',))
+        ensure_default_users_group(conn)
+        users_group_id = get_users_group_id(conn)
+        if users_group_id:
+            members_count = conn.execute(
+                'SELECT COUNT(*) AS cnt FROM group_members WHERE group_id = ?',
+                (users_group_id,),
+            ).fetchone()['cnt']
+            if members_count == 0:
+                sync_all_ad_users_to_default_group(conn)
         conn.commit()
+
+
 def get_user_ad_groups(conn, user_dn):
     search_filter = f"(member:1.2.840.113556.1.4.1941:={user_dn})"
     conn.search(LDAP_CONFIG['base'], search_filter, SUBTREE, attributes=['sAMAccountName', 'cn'])
@@ -858,6 +1196,12 @@ def login_page():
     if ok:
         session['logged_in'] = True
         session['username'] = u
+        conn = get_db_connection()
+        try:
+            add_user_to_default_group(conn, u)
+            conn.commit()
+        finally:
+            conn.close()
         return jsonify(success=True)
     return jsonify(success=False, error=auth_error or 'Ошибка авторизации AD'), 401
 
@@ -964,6 +1308,8 @@ def ai_assistant_page():
 def tabel_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_view_tabel(session.get('username')):
+        return redirect(url_for('index'))
     ensure_tabel_index()
     now = datetime.now()
     current_period_key = f"{str(now.year)[2:]}_{now.month:02d}"
@@ -1006,6 +1352,8 @@ def logout():
 def tabel_meta():
     if not session.get('logged_in'):
         return jsonify(success=False, error='Требуется авторизация'), 403
+    if not can_view_tabel(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к табелю'), 403
     ensure_tabel_index()
     now = datetime.now()
     source_available = os.path.exists(TABEL_BASE_DIR)
@@ -1037,22 +1385,40 @@ def tabel_meta():
             yy = str(year)[2:]
             mm = f'{month_index:02d}'
             payload.append({'key': f'{yy}_{mm}', 'label': f'{mm}.{year}'})
+    index_summary = _tabel_index_summary()
     return jsonify({
         'periods': payload,
         'current_period': current_period,
         'source': {
             'base_dir': TABEL_BASE_DIR,
             'leaders_file': TABEL_LEADERS_FILE,
+            'cache_file': os.path.abspath(TABEL_CACHE_FILE),
+            'sheet_name': TABEL_SHEET_NAME,
             'base_dir_available': source_available,
-            'leaders_file_available': leaders_source_available
+            'leaders_file_available': leaders_source_available,
+            'indexed_employees': index_summary.get('unique_employees', 0),
         }
     })
+
+
+@app.route('/api/tabel/diagnostics')
+def tabel_diagnostics_api():
+    if not session.get('logged_in'):
+        return jsonify(success=False, error='Требуется авторизация'), 403
+    if not can_view_tabel(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к табелю'), 403
+    force = request.args.get('force') == '1'
+    if force and session.get('username') not in MASTER_ADMINS:
+        force = False
+    return jsonify(build_tabel_diagnostics(force_scan=force, portal_username=session.get('username')))
 
 
 @app.route('/api/tabel/leaders')
 def tabel_leaders():
     if not session.get('logged_in'):
         return jsonify(success=False, error='Требуется авторизация'), 403
+    if not can_view_tabel(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к табелю'), 403
     ensure_tabel_index()
     return jsonify(get_tabel_leaders_data())
 
@@ -1060,6 +1426,8 @@ def tabel_leaders():
 @app.route('/api/tabel/search-fio')
 def tabel_search_fio():
     if not session.get('logged_in'):
+        return jsonify([]), 403
+    if not can_view_tabel(session.get('username')):
         return jsonify([]), 403
     ensure_tabel_index()
     query = (request.args.get('q') or '').strip().lower()
@@ -1081,6 +1449,8 @@ def tabel_search_fio():
 def tabel_status_month():
     if not session.get('logged_in'):
         return jsonify(success=False, error='Требуется авторизация'), 403
+    if not can_view_tabel(session.get('username')):
+        return jsonify({'error': 'forbidden'}), 403
     ensure_tabel_index()
     fio = (request.args.get('fio') or '').strip()
     period = (request.args.get('period') or '').strip()
@@ -1127,6 +1497,8 @@ def tabel_status_month():
 @app.route('/api/leaders')
 def tabel_leaders_compat():
     if not session.get('logged_in'):
+        return jsonify([]), 403
+    if not can_view_tabel(session.get('username')):
         return jsonify([]), 403
     ensure_tabel_index()
     return jsonify(get_tabel_leaders_data())
@@ -2095,17 +2467,28 @@ def get_resources():
             if gid not in group_map: group_map[gid] = []
             group_map[gid].append(mr['username'].lower())
 
+        users_group_row = conn.execute(
+            'SELECT id FROM groups WHERE name = ? COLLATE NOCASE',
+            (DEFAULT_USERS_GROUP_NAME,),
+        ).fetchone()
+        users_group_id = str(users_group_row['id']) if users_group_row else None
+
         visible = []
         for r in rows:
             g_ids = r['group_ids'].split(',') if r['group_ids'] else []
             row_dict = dict(r)
             row_dict['url'] = normalize_resource_url(row_dict.get('url'))
+            if row_dict['url'].rstrip('/') == '/tabel' and not can_view_tabel(u):
+                continue
             if not g_ids:
                 if matches_search(row_dict):
                     visible.append(row_dict)
                 continue
             can_see = False
             for gid in g_ids:
+                if users_group_id and gid == users_group_id:
+                    can_see = True
+                    break
                 allowed_entities = group_map.get(gid, [])
                 if u in allowed_entities or any(ag in allowed_entities for ag in user_ad_groups):
                     can_see = True
@@ -2394,6 +2777,59 @@ def get_booking_access_entities():
         conn.close()
 
 
+@app.route('/api/tabel-access')
+def get_tabel_access_entities():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify([]), 403
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            '''
+            SELECT entity_type, entity_login
+            FROM tabel_privileged_entities
+            ORDER BY entity_type ASC, entity_login COLLATE NOCASE
+            '''
+        ).fetchall()
+        return jsonify([{'type': row['entity_type'], 'login': row['entity_login']} for row in rows])
+    finally:
+        conn.close()
+
+
+@app.route('/manage_tabel_access', methods=['POST'])
+def manage_tabel_access():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    payload = request.json or {}
+    action = (payload.get('action') or '').strip()
+    entity_type = (payload.get('type') or 'user').strip().lower()
+    raw_login = payload.get('username')
+    if entity_type == 'group':
+        entity_login = str(raw_login or '').strip().lower()
+    else:
+        entity_type = 'user'
+        entity_login = normalize_ad_username(raw_login)
+    if action not in ('add', 'delete'):
+        return jsonify(success=False, error='Неизвестное действие'), 400
+    if not entity_login:
+        return jsonify(success=False, error='Укажите пользователя или группу'), 400
+    conn = get_db_connection()
+    try:
+        if action == 'add':
+            conn.execute(
+                'INSERT OR IGNORE INTO tabel_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (entity_type, entity_login)
+            )
+        else:
+            conn.execute(
+                'DELETE FROM tabel_privileged_entities WHERE entity_type = ? AND entity_login = ?',
+                (entity_type, entity_login)
+            )
+        conn.commit()
+        return jsonify(success=True)
+    finally:
+        conn.close()
+
+
 @app.route('/manage_booking_access', methods=['POST'])
 def manage_booking_access():
     if session.get('username') not in MASTER_ADMINS:
@@ -2566,6 +3002,7 @@ def _build_access_export_payload(conn):
         'booking_privileged_entities': privileged('booking_privileged_entities'),
         'resource_privileged_entities': privileged('resource_privileged_entities'),
         'ai_privileged_entities': privileged('ai_privileged_entities'),
+        'tabel_privileged_entities': privileged('tabel_privileged_entities'),
     }
 
 
@@ -2700,6 +3137,7 @@ def import_access_permissions():
     booking_in = as_privileged('booking_privileged_entities')
     resource_in = as_privileged('resource_privileged_entities')
     ai_in = as_privileged('ai_privileged_entities')
+    tabel_in = as_privileged('tabel_privileged_entities')
 
     conn = get_db_connection()
     try:
@@ -2710,6 +3148,7 @@ def import_access_permissions():
         conn.execute('DELETE FROM booking_privileged_entities')
         conn.execute('DELETE FROM resource_privileged_entities')
         conn.execute('DELETE FROM ai_privileged_entities')
+        conn.execute('DELETE FROM tabel_privileged_entities')
 
         for row in groups_in:
             conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (row['name'],))
@@ -2781,6 +3220,11 @@ def import_access_permissions():
                 'INSERT OR IGNORE INTO ai_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
                 (et, el),
             )
+        for et, el in tabel_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO tabel_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
 
         conn.commit()
     except Exception as exc:
@@ -2800,6 +3244,7 @@ def import_access_permissions():
             'booking_privileged': len(booking_in),
             'resource_privileged': len(resource_in),
             'ai_privileged': len(ai_in),
+            'tabel_privileged': len(tabel_in),
         },
     )
 
@@ -2948,6 +3393,28 @@ def import_database_file():
                 os.unlink(staging)
             except OSError:
                 pass
+
+
+@app.route('/api/admin/sync-users-group', methods=['POST'])
+def sync_users_group_api():
+    """Заполнить группу «Пользователи» учётными записями из AD."""
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    conn = get_db_connection()
+    try:
+        ensure_default_users_group(conn)
+        added = sync_all_ad_users_to_default_group(conn)
+        group_id = get_users_group_id(conn)
+        total_members = 0
+        if group_id:
+            total_members = conn.execute(
+                'SELECT COUNT(*) AS cnt FROM group_members WHERE group_id = ?',
+                (group_id,),
+            ).fetchone()['cnt']
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify(success=True, added=added, total_members=total_members)
 
 
 @app.route('/manage_ai_access', methods=['POST'])
