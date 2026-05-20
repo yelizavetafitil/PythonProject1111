@@ -68,17 +68,6 @@
 
         .btn-main { padding: 0 15px; height: 35px; background: var(--accent); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 12px; transition: opacity 0.2s; }
         .btn-main:hover { opacity: 0.9; }
-        .btn-ghost { padding: 0 10px; height: 28px; background: transparent; color: var(--accent); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 700; }
-        .diag-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 2000; padding: 16px; box-sizing: border-box; }
-        .diag-modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; width: min(720px, 100%); max-height: 85vh; overflow: hidden; display: flex; flex-direction: column; }
-        .diag-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-        .diag-body { padding: 12px 16px; overflow-y: auto; font-size: 12px; line-height: 1.45; }
-        .diag-ok { color: #2f855a; font-weight: 700; }
-        .diag-bad { color: #c53030; font-weight: 700; }
-        .diag-path { font-family: Consolas, monospace; font-size: 11px; word-break: break-all; opacity: 0.85; margin: 4px 0 10px; }
-        .diag-errors { margin-top: 8px; padding: 8px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); max-height: 180px; overflow-y: auto; }
-        .diag-errors div { margin-bottom: 6px; }
-
         #res { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; flex: 1; height: 100%; }
         .day { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; background: var(--bg); border: 1px solid transparent; min-height: 50px; }
@@ -92,6 +81,10 @@
     </style>
 </head>
 <body>
+
+<div id="tabelLoadBanner" style="display:none; position:fixed; top:8px; left:50%; transform:translateX(-50%); z-index:3000; background:var(--card); border:1px solid var(--border); border-radius:8px; padding:8px 14px; font-size:12px; box-shadow:0 4px 12px rgba(0,0,0,0.12);">
+    Загрузка данных с \\srv-doc в фоне…
+</div>
 
 <div class="layout">
     <div class="panel">
@@ -124,7 +117,6 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px">
             <h2 id="dep-name" style="margin:0; font-size: 14px; color: var(--accent); font-weight: 800;">ОБЩИЙ МОНИТОРИНГ</h2>
             <div style="display:flex; gap:6px; align-items:center">
-                <button type="button" class="btn-ghost" onclick="openTabelDiagnostics(false)">Диагностика</button>
                 <button onclick="document.body.classList.toggle('dark')" class="btn-main" style="background:var(--border); color:var(--text); height: 28px; font-size: 10px; padding: 0 10px;">🌓 ТЕМА</button>
             </div>
         </div>
@@ -167,19 +159,6 @@
             <div class="leader-content"><span class="l-fio">{{l.fio}}</span><span class="l-info">{{l.info}}</span></div>
         </div>
         {% endfor %}
-    </div>
-</div>
-
-<div id="diagOverlay" class="diag-overlay" onclick="if(event.target===this) closeTabelDiagnostics()">
-    <div class="diag-modal" role="dialog" aria-labelledby="diagTitle">
-        <div class="diag-head">
-            <strong id="diagTitle">Диагностика табелей</strong>
-            <div style="display:flex; gap:6px;">
-                <button type="button" class="btn-ghost" onclick="openTabelDiagnostics(true)">Пересканировать</button>
-                <button type="button" class="btn-ghost" onclick="closeTabelDiagnostics()">Закрыть</button>
-            </div>
-        </div>
-        <div id="diagBody" class="diag-body">Загрузка…</div>
     </div>
 </div>
 
@@ -253,120 +232,39 @@
 
     document.onclick = (e) => { if(!fioInp.contains(e.target)) sugBox.style.display='none'; };
 
-    function escapeHtml(text) {
-        return String(text)
-            .replaceAll('&', '&amp;')
-            .replaceAll('<', '&lt;')
-            .replaceAll('>', '&gt;')
-            .replaceAll('"', '&quot;');
-    }
 
-    function closeTabelDiagnostics() {
-        document.getElementById('diagOverlay').style.display = 'none';
-    }
+    const tabelLoadBanner = document.getElementById('tabelLoadBanner');
+    if (tabelLoadBanner) tabelLoadBanner.style.display = 'block';
 
-    async function openTabelDiagnostics(forceRescan) {
-        const overlay = document.getElementById('diagOverlay');
-        const body = document.getElementById('diagBody');
-        overlay.style.display = 'flex';
-        body.innerHTML = '<div style="opacity:0.6;">Проверка подключения к файлам…</div>';
+    async function refreshLeadersFromApi() {
         try {
-            const url = forceRescan ? '/api/tabel/diagnostics?force=1' : '/api/tabel/diagnostics';
-            const r = await fetch(url);
-            const data = await r.json();
-            if (!r.ok) {
-                body.innerHTML = '<div class="diag-bad">Не удалось получить диагностику</div>';
-                return;
-            }
-            const filesOk = data.files_ok !== undefined ? data.files_ok : data.ok;
-            const portalOk = data.portal_access && data.portal_access.can_view;
-            let statusClass = filesOk ? 'diag-ok' : 'diag-bad';
-            let statusText = filesOk ? 'Файлы табеля доступны серверу' : 'Файлы табеля на \\\\srv-doc с этого компьютера недоступны';
-            if (portalOk && !filesOk) {
-                statusClass = 'diag-ok';
-                statusText = 'Ваш доступ к странице табеля есть; данные с \\\\srv-doc на этом сервере пока не читаются';
-            } else if (!portalOk) {
-                statusClass = 'diag-bad';
-                statusText = 'Нет доступа к странице табеля (добавьте логин в /manage → «Доступ к странице мониторинга табеля»)';
-            }
-            let html = `<div class="${statusClass}">${statusText}</div>`;
-            if (data.portal_access && data.portal_access.login) {
-                const pa = data.portal_access;
-                const paClass = pa.can_view ? 'diag-ok' : 'diag-bad';
-                html += '<div style="margin:10px 0; padding:10px; border-radius:8px; background:var(--bg); border:1px solid var(--border);">';
-                html += `<strong class="${paClass}">Вход на портал: ${escapeHtml(pa.login)}</strong> — `;
-                html += pa.can_view
-                    ? (pa.is_master_admin ? 'доступ к табелю есть (мастер-администратор)' : 'доступ к табелю есть')
-                    : 'доступа к табелю нет';
-                html += '</div>';
-            }
-            if (data.file_access_identity) {
-                const idn = data.file_access_identity;
-                html += '<div style="margin:10px 0; padding:10px; border-radius:8px; background:var(--bg); border:1px solid var(--border);">';
-                html += '<strong>Какая учётка открывает папки</strong><br>';
-                html += `<span style="font-size:14px;">${escapeHtml(idn.display || '—')}</span>`;
-                if (idn.computer_name) html += ` <span style="opacity:0.7;">(сервер: ${escapeHtml(idn.computer_name)})</span>`;
-                html += `<div style="margin-top:6px; opacity:0.85;">${escapeHtml(idn.access_note || '')}</div>`;
-                html += `<div style="margin-top:4px; opacity:0.75; font-size:11px;">${escapeHtml(idn.ldap_bind_note || '')}</div></div>`;
-            }
-            html += `<div class="diag-path"><strong>Каталог табелей:</strong><br>${escapeHtml(data.paths?.base_dir || '')}</div>`;
-            html += `<div class="diag-path"><strong>Список руководителей:</strong><br>${escapeHtml(data.paths?.leaders_file || '')}</div>`;
-            html += `<div class="diag-path"><strong>Кэш:</strong> ${escapeHtml(data.paths?.cache_file || '')} · лист «${escapeHtml(data.paths?.sheet_name || '')}»</div>`;
-            html += `<div style="margin:8px 0;">Последнее сканирование: <strong>${escapeHtml(data.last_scan_at || '—')}</strong></div>`;
-            if (data.last_scan_stats) {
-                const s = data.last_scan_stats;
-                html += `<div>Файлов по шаблону: <strong>${s.files_matched || 0}</strong>, прочитано: <strong>${s.files_parsed || 0}</strong>, из кэша: <strong>${s.files_skipped_cache || 0}</strong>, ошибок: <strong>${s.files_failed || 0}</strong></div>`;
-                html += `<div>Сотрудников в индексе: <strong>${s.employees_indexed || 0}</strong> (уникальных ФИО: <strong>${data.index?.unique_employees || 0}</strong>)</div>`;
-            }
-            if (data.checks && data.checks.length) {
-                html += '<div style="margin-top:10px;"><strong>Проверки</strong></div><ul style="margin:6px 0 0 18px; padding:0;">';
-                data.checks.forEach((c) => {
-                    html += `<li><span class="${c.ok ? 'diag-ok' : 'diag-bad'}">${c.ok ? 'OK' : 'Ошибка'}</span> — ${escapeHtml(c.name)}: ${escapeHtml(c.detail || '')}</li>`;
-                });
-                html += '</ul>';
-            }
-            if (data.last_scan_errors && data.last_scan_errors.length) {
-                html += '<div class="diag-errors"><strong>Ошибки при сканировании</strong>';
-                data.last_scan_errors.forEach((err) => {
-                    html += `<div><span class="diag-bad">${escapeHtml(err.stage || 'error')}</span>: ${escapeHtml(err.path || '')}<br>${escapeHtml(err.message || '')}</div>`;
-                });
-                html += '</div>';
-            }
-            body.innerHTML = html;
-        } catch (e) {
-            body.innerHTML = '<div class="diag-bad">Ошибка запроса диагностики</div>';
-        }
-    }
-
-    // --- ФОНОВОЕ ОБНОВЛЕНИЕ ПАНЕЛЕЙ (КАЖДЫЕ 5 СЕКУНД) ---
-    setInterval(async () => {
-        try {
-            // Запрашиваем актуальные статусы руководителей
             const r = await fetch('/api/leaders');
-            if (r.ok) {
-                const leadersData = await r.json();
-
-                // Перебираем категории и руководителей
-                for (const cat in leadersData) {
-                    leadersData[cat].forEach(l => {
-                        // Ищем элемент слева или справа по ФИО (поэтому мы добавили data-fio)
-                        const el = document.querySelector(`.leader-item[data-fio="${l.fio}"]`);
-
-                        if (el) {
-                            // Перекрашиваем кружок без перезагрузки страницы
-                            el.className = `leader-item ${l.status_cls}`;
-                        }
-                    });
+            if (!r.ok) return;
+            const leadersData = await r.json();
+            let total = 0;
+            for (const cat in leadersData) {
+                (leadersData[cat] || []).forEach(l => {
+                    total += 1;
+                    const el = document.querySelector(`.leader-item[data-fio="${l.fio}"]`);
+                    if (el) el.className = `leader-item ${l.status_cls}`;
+                });
+            }
+            if (tabelLoadBanner) {
+                if (total) {
+                    tabelLoadBanner.style.display = 'none';
+                } else {
+                    tabelLoadBanner.style.display = 'block';
+                    tabelLoadBanner.textContent = 'Нет связи с \\\\srv-doc — проверьте VPN';
                 }
             }
-            // Если по центру открыт табель, обновляем и его (тихо)
-            if (fioInp.value) {
-                fetchData(true);
-            }
+            if (fioInp.value) fetchData(true);
         } catch (e) {
-            console.log("Не удалось обновить данные в фоне", e);
+            console.log('Не удалось обновить данные в фоне', e);
         }
-    }, 5000);
+    }
+
+    refreshLeadersFromApi();
+    setInterval(refreshLeadersFromApi, 5000);
 </script>
 </body>
 </html>

@@ -312,7 +312,7 @@
             display: grid;
             grid-template-columns: minmax(240px, 22vw) minmax(0, 1fr);
             gap: 12px;
-            align-items: stretch;
+            align-items: start;
             margin-top: 10px;
         }
         .files-panel {
@@ -320,6 +320,7 @@
             border-radius: 12px;
             background: #f7fbff;
             overflow: hidden;
+            height: fit-content;
             max-height: var(--kb-reader-height);
             overflow-y: auto;
             box-shadow: 0 6px 14px rgba(17, 46, 90, 0.1);
@@ -355,19 +356,24 @@
             border: 1px solid #c8d9f2;
             border-radius: 12px;
             background: #fff;
-            min-height: var(--kb-reader-height);
             overflow: hidden;
             box-shadow: 0 10px 20px rgba(17, 46, 90, 0.12);
         }
-        .viewer-empty {
+        .viewer-wrap.is-open {
             min-height: var(--kb-reader-height);
+        }
+        .viewer-empty {
+            min-height: 120px;
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
             color: #6f86a6;
             font-size: 14px;
-            padding: 20px;
+            padding: 16px 20px;
+        }
+        .viewer-wrap.is-open .viewer-empty {
+            display: none !important;
         }
         .pdf-frame {
             width: 100%;
@@ -390,7 +396,7 @@
             :root { --kb-reader-height: min(52vh, 480px); }
             .kb-split { grid-template-columns: 1fr; }
             .files-panel { max-height: min(36vh, 320px); }
-            .viewer-wrap, .viewer-empty { min-height: var(--kb-reader-height); }
+            .viewer-wrap.is-open { min-height: var(--kb-reader-height); }
             .pdf-frame { height: var(--kb-reader-height); }
         }
         @media (max-width: 760px) {
@@ -488,6 +494,7 @@
     const fileSearchEl = document.getElementById('fileSearch');
     const pdfFrameEl = document.getElementById('pdfFrame');
     const viewerEmptyEl = document.getElementById('viewerEmpty');
+    const viewerWrapEl = document.querySelector('.viewer-wrap');
 
     let allDocuments = [];
     let selectedCategory = '';
@@ -550,6 +557,7 @@
 
     async function loadFiles(categoryName) {
         selectedCategory = categoryName;
+        resetViewer();
         readerTitleEl.textContent = `Категория: ${categoryName}`;
         const response = await fetch(`/api/knowledge-base/files?category=${encodeURIComponent(categoryName)}`, { cache: 'no-store' });
         if (!response.ok) {
@@ -580,10 +588,18 @@
         }).join('');
     }
 
+    function resetViewer() {
+        pdfFrameEl.src = '';
+        pdfFrameEl.style.display = 'none';
+        viewerEmptyEl.style.display = 'flex';
+        if (viewerWrapEl) viewerWrapEl.classList.remove('is-open');
+    }
+
     function openPdf(url) {
         pdfFrameEl.src = url;
         pdfFrameEl.style.display = 'block';
         viewerEmptyEl.style.display = 'none';
+        if (viewerWrapEl) viewerWrapEl.classList.add('is-open');
     }
 
     function renderGlobalSearchResults() {
@@ -638,9 +654,7 @@
 
     backToCategoriesEl.addEventListener('click', () => {
         showBrowsePanel();
-        pdfFrameEl.src = '';
-        pdfFrameEl.style.display = 'none';
-        viewerEmptyEl.style.display = 'flex';
+        resetViewer();
     });
 
     globalSearchEl.addEventListener('input', renderGlobalSearchResults);

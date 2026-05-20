@@ -23,4 +23,4 @@
 # (в app.py при FLASK_DEBUG=0 лучше всё равно использовать waitress/gunicorn)
 #
 # 5) nssm start BelnipiPortal
-# 6) Проверка: http://<сервер>:5004/tabel → Диагностика
+# 6) Проверка: http://<сервер>:5004/tabel — поиск сотрудника и список руководителей

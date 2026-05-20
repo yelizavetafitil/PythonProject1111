@@ -8,7 +8,9 @@ import hashlib
 import time
 import threading
 import tempfile
-import getpass
+import sys
+import subprocess
+from contextlib import contextmanager
 import calendar
 import smtplib
 from email.message import EmailMessage
@@ -111,6 +113,17 @@ TABEL_LAST_SCAN_TS = 0.0
 TABEL_SCAN_INTERVAL_SEC = 180
 TABEL_LAST_SCAN_ERRORS = []
 TABEL_LAST_SCAN_STATS = {}
+TABEL_SMB_USER = os.environ.get('TABEL_SMB_USER', 'oc1@local.energoprom.by')
+TABEL_SMB_PASSWORD = os.environ.get('TABEL_SMB_PASSWORD', LDAP_CONFIG['bind_password'])
+TABEL_SMB_ENABLED = os.environ.get(
+    'TABEL_SMB_ENABLED',
+    '1' if sys.platform == 'win32' else '0',
+).strip().lower() in ('1', 'true', 'yes')
+TABEL_LAST_SMB_CONNECT = {}
+TABEL_SMB_NET_USE_TIMEOUT = int(os.environ.get('TABEL_SMB_NET_USE_TIMEOUT', '20'))
+TABEL_SCAN_LOCK = threading.Lock()
+TABEL_SCAN_THREAD = None
+_smb_use_lock = threading.Lock()
 KNOWLEDGE_BASE_ROOT = os.environ.get('KNOWLEDGE_BASE_ROOT', os.path.join(app.root_path, 'БАЗА ЗНАНИЙ'))
 KNOWLEDGE_BASE_INSTRUCTIONS_DIR = os.environ.get(
     'KNOWLEDGE_BASE_INSTRUCTIONS_DIR',
@@ -204,6 +217,63 @@ def _tabel_save_cache():
         return
 
 
+def _tabel_smb_configured():
+    return bool(TABEL_SMB_ENABLED and TABEL_SMB_USER and TABEL_SMB_PASSWORD)
+
+
+def _windows_net_use(unc_path, username, password, *, disconnect=False):
+    """Подключение/отключение UNC на Windows (net use), как в старом сервисе табеля."""
+    if sys.platform != 'win32':
+        return False, 'Только Windows'
+    if disconnect:
+        subprocess.run(
+            ['net', 'use', unc_path, '/delete', '/y'],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return True, ''
+    cmd = ['net', 'use', unc_path, password, f'/user:{username}', '/persistent:no']
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=TABEL_SMB_NET_USE_TIMEOUT)
+    output = ((result.stdout or '') + (result.stderr or '')).strip()
+    if result.returncode == 0:
+        return True, output
+    lowered = output.lower()
+    if '1219' in output or 'уже подключ' in lowered or 'already' in lowered:
+        return True, output
+    if '1326' in output or '86' in output or 'denied' in lowered or 'отказано' in lowered:
+        return False, output or 'Неверный логин или пароль / нет прав'
+    subprocess.run(['net', 'use', unc_path, '/delete', '/y'], capture_output=True, text=True, timeout=30)
+    retry = subprocess.run(cmd, capture_output=True, text=True, timeout=TABEL_SMB_NET_USE_TIMEOUT)
+    output2 = ((retry.stdout or '') + (retry.stderr or '')).strip()
+    if retry.returncode == 0:
+        return True, output2
+    return False, output2 or output or f'net use код {retry.returncode}'
+
+
+@contextmanager
+def _tabel_unc_connection():
+    """Сессия SMB под TABEL_SMB_USER (по умолчанию oc1@local.energoprom.by)."""
+    global TABEL_LAST_SMB_CONNECT
+    if not _tabel_smb_configured():
+        TABEL_LAST_SMB_CONNECT = {'connected': False, 'user': None, 'message': 'Отключено (не Windows или TABEL_SMB_ENABLED=0)'}
+        yield TABEL_LAST_SMB_CONNECT
+        return
+    unc = TABEL_BASE_DIR
+    with _smb_use_lock:
+        ok, message = _windows_net_use(unc, TABEL_SMB_USER, TABEL_SMB_PASSWORD)
+        TABEL_LAST_SMB_CONNECT = {
+            'connected': ok,
+            'user': TABEL_SMB_USER,
+            'message': message,
+        }
+        try:
+            yield TABEL_LAST_SMB_CONNECT
+        finally:
+            if ok:
+                _windows_net_use(unc, TABEL_SMB_USER, TABEL_SMB_PASSWORD, disconnect=True)
+
+
 def _tabel_rebuild_index_from_cache():
     local_index = {}
     for file_path, data in TABEL_FILE_CACHE.items():
@@ -234,152 +304,195 @@ def _scan_tabel_base_dir():
         'employees_indexed': 0,
     }
 
-    if not os.path.exists(TABEL_BASE_DIR):
-        errors.append({
-            'stage': 'base_dir',
-            'path': TABEL_BASE_DIR,
-            'message': 'Каталог не найден или недоступен по сети',
-        })
-    else:
-        try:
-            os.listdir(TABEL_BASE_DIR)
-        except OSError as exc:
+    with _tabel_unc_connection() as smb:
+        smb_ready = not _tabel_smb_configured() or bool(smb.get('connected'))
+        if _tabel_smb_configured() and not smb_ready:
+            errors.append({
+                'stage': 'smb_connect',
+                'path': TABEL_BASE_DIR,
+                'message': smb.get('message') or f'Не удалось подключить шару под {TABEL_SMB_USER}',
+            })
+
+        if not smb_ready:
+            _tabel_rebuild_index_from_cache()
+            TABEL_LAST_SCAN_ERRORS = errors[-100:]
+            TABEL_LAST_SCAN_STATS = stats
+            return
+
+        if not os.path.exists(TABEL_BASE_DIR):
             errors.append({
                 'stage': 'base_dir',
                 'path': TABEL_BASE_DIR,
-                'message': f'Нет прав на чтение каталога: {exc}',
+                'message': 'Каталог не найден или недоступен по сети',
+            })
+        else:
+            try:
+                os.listdir(TABEL_BASE_DIR)
+            except OSError as exc:
+                errors.append({
+                    'stage': 'base_dir',
+                    'path': TABEL_BASE_DIR,
+                    'message': f'Нет прав на чтение каталога: {exc}',
+                })
+
+        try:
+            walk_roots = [TABEL_BASE_DIR] if os.path.exists(TABEL_BASE_DIR) else []
+            for root, _, files in os.walk(TABEL_BASE_DIR) if walk_roots else []:
+                rel = os.path.relpath(root, TABEL_BASE_DIR)
+                dept = rel.split(os.sep)[0] if rel != '.' else 'Общий'
+                for filename in files:
+                    if not filename.lower().endswith(('.xls', '.xlsx')) or filename.startswith('~$'):
+                        continue
+                    mm, yy = _tabel_parse_filename(filename)
+                    if not mm:
+                        continue
+                    try:
+                        if 2000 + int(yy) < current_year - 1:
+                            continue
+                    except Exception:
+                        continue
+                    full_path = os.path.join(root, filename)
+                    found_files.add(full_path)
+                    stats['files_matched'] += 1
+                    try:
+                        current_mtime = os.path.getmtime(full_path)
+                    except OSError as exc:
+                        stats['files_failed'] += 1
+                        errors.append({
+                            'stage': 'mtime',
+                            'path': full_path,
+                            'message': str(exc),
+                        })
+                        continue
+                    cached = TABEL_FILE_CACHE.get(full_path)
+                    if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
+                        stats['files_skipped_cache'] += 1
+                        stats['employees_indexed'] += len(cached.get('emps') or [])
+                        continue
+                    df = _tabel_read_any_excel(full_path)
+                    if df is None:
+                        stats['files_failed'] += 1
+                        errors.append({
+                            'stage': 'read_excel',
+                            'path': full_path,
+                            'message': f'Не удалось прочитать лист «{TABEL_SHEET_NAME}»',
+                        })
+                        continue
+                    employees = []
+                    try:
+                        for row_index, raw_name in enumerate(df.iloc[:, 1]):
+                            name = _tabel_clean_fio(raw_name)
+                            if not name or not TABEL_FIO_RE.match(name):
+                                continue
+                            row_data = df.iloc[row_index].values
+                            days_data = []
+                            for day_idx in range(31):
+                                col_idx = 2 + day_idx
+                                if col_idx < len(row_data):
+                                    day_val = row_data[col_idx]
+                                    days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
+                                else:
+                                    days_data.append('')
+                            employees.append({'fio': name, 'days': days_data})
+                    except Exception as exc:
+                        stats['files_failed'] += 1
+                        errors.append({
+                            'stage': 'parse_rows',
+                            'path': full_path,
+                            'message': str(exc),
+                        })
+                        continue
+                    if employees:
+                        TABEL_FILE_CACHE[full_path] = {
+                            'mtime': current_mtime,
+                            'dept': dept,
+                            'yy_mm': f'{yy}_{mm}',
+                            'emps': employees
+                        }
+                        cache_updated = True
+                        stats['files_parsed'] += 1
+                        stats['employees_indexed'] += len(employees)
+                    else:
+                        stats['files_failed'] += 1
+                        errors.append({
+                            'stage': 'empty_sheet',
+                            'path': full_path,
+                            'message': 'В файле нет строк с ФИО в ожидаемом формате',
+                        })
+        except OSError as exc:
+            errors.append({
+                'stage': 'walk',
+                'path': TABEL_BASE_DIR,
+                'message': str(exc),
             })
 
-    try:
-        walk_roots = [TABEL_BASE_DIR] if os.path.exists(TABEL_BASE_DIR) else []
-        for root, _, files in os.walk(TABEL_BASE_DIR) if walk_roots else []:
-            rel = os.path.relpath(root, TABEL_BASE_DIR)
-            dept = rel.split(os.sep)[0] if rel != '.' else 'Общий'
-            for filename in files:
-                if not filename.lower().endswith(('.xls', '.xlsx')) or filename.startswith('~$'):
-                    continue
-                mm, yy = _tabel_parse_filename(filename)
-                if not mm:
-                    continue
-                try:
-                    if 2000 + int(yy) < current_year - 1:
-                        continue
-                except Exception:
-                    continue
-                full_path = os.path.join(root, filename)
-                found_files.add(full_path)
-                stats['files_matched'] += 1
-                try:
-                    current_mtime = os.path.getmtime(full_path)
-                except OSError as exc:
-                    stats['files_failed'] += 1
-                    errors.append({
-                        'stage': 'mtime',
-                        'path': full_path,
-                        'message': str(exc),
-                    })
-                    continue
-                cached = TABEL_FILE_CACHE.get(full_path)
-                if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
-                    stats['files_skipped_cache'] += 1
-                    stats['employees_indexed'] += len(cached.get('emps') or [])
-                    continue
-                df = _tabel_read_any_excel(full_path)
-                if df is None:
-                    stats['files_failed'] += 1
-                    errors.append({
-                        'stage': 'read_excel',
-                        'path': full_path,
-                        'message': f'Не удалось прочитать лист «{TABEL_SHEET_NAME}»',
-                    })
-                    continue
-                employees = []
-                try:
-                    for row_index, raw_name in enumerate(df.iloc[:, 1]):
-                        name = _tabel_clean_fio(raw_name)
-                        if not name or not TABEL_FIO_RE.match(name):
-                            continue
-                        row_data = df.iloc[row_index].values
-                        days_data = []
-                        for day_idx in range(31):
-                            col_idx = 2 + day_idx
-                            if col_idx < len(row_data):
-                                day_val = row_data[col_idx]
-                                days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
-                            else:
-                                days_data.append('')
-                        employees.append({'fio': name, 'days': days_data})
-                except Exception as exc:
-                    stats['files_failed'] += 1
-                    errors.append({
-                        'stage': 'parse_rows',
-                        'path': full_path,
-                        'message': str(exc),
-                    })
-                    continue
-                if employees:
-                    TABEL_FILE_CACHE[full_path] = {
-                        'mtime': current_mtime,
-                        'dept': dept,
-                        'yy_mm': f'{yy}_{mm}',
-                        'emps': employees
-                    }
-                    cache_updated = True
-                    stats['files_parsed'] += 1
-                    stats['employees_indexed'] += len(employees)
-                else:
-                    stats['files_failed'] += 1
-                    errors.append({
-                        'stage': 'empty_sheet',
-                        'path': full_path,
-                        'message': 'В файле нет строк с ФИО в ожидаемом формате',
-                    })
-    except OSError as exc:
-        errors.append({
-            'stage': 'walk',
-            'path': TABEL_BASE_DIR,
-            'message': str(exc),
-        })
-
-    if not os.path.exists(TABEL_LEADERS_FILE):
-        errors.append({
-            'stage': 'leaders_file',
-            'path': TABEL_LEADERS_FILE,
-            'message': 'Файл списка руководителей не найден',
-        })
-    else:
-        try:
-            openpyxl.load_workbook(TABEL_LEADERS_FILE, read_only=True, data_only=True).close()
-        except Exception as exc:
+        if not os.path.exists(TABEL_LEADERS_FILE):
             errors.append({
                 'stage': 'leaders_file',
                 'path': TABEL_LEADERS_FILE,
-                'message': f'Не удалось открыть: {exc}',
+                'message': 'Файл списка руководителей не найден',
             })
+        else:
+            try:
+                openpyxl.load_workbook(TABEL_LEADERS_FILE, read_only=True, data_only=True).close()
+            except Exception as exc:
+                errors.append({
+                    'stage': 'leaders_file',
+                    'path': TABEL_LEADERS_FILE,
+                    'message': f'Не удалось открыть: {exc}',
+                })
 
-    deleted_files = set(TABEL_FILE_CACHE.keys()) - found_files
-    if deleted_files:
-        for deleted_path in deleted_files:
-            TABEL_FILE_CACHE.pop(deleted_path, None)
-        cache_updated = True
-    if cache_updated:
-        _tabel_save_cache()
-    _tabel_rebuild_index_from_cache()
-    TABEL_LAST_SCAN_ERRORS = errors[-100:]
-    TABEL_LAST_SCAN_STATS = stats
+        deleted_files = set(TABEL_FILE_CACHE.keys()) - found_files
+        if deleted_files:
+            for deleted_path in deleted_files:
+                TABEL_FILE_CACHE.pop(deleted_path, None)
+            cache_updated = True
+        if cache_updated:
+            _tabel_save_cache()
+        _tabel_rebuild_index_from_cache()
+        TABEL_LAST_SCAN_ERRORS = errors[-100:]
+        TABEL_LAST_SCAN_STATS = stats
 
 
-def ensure_tabel_index(force=False):
+def _run_tabel_scan():
     global TABEL_LAST_SCAN_TS
-    now_ts = time.time()
-    if not force and (now_ts - TABEL_LAST_SCAN_TS) < TABEL_SCAN_INTERVAL_SEC and TABEL_INDEX:
-        return
-    with TABEL_INDEX_LOCK:
-        # Повторно проверяем внутри lock, чтобы не запускать конкурентные сканы.
-        if not force and (time.time() - TABEL_LAST_SCAN_TS) < TABEL_SCAN_INTERVAL_SEC and TABEL_INDEX:
-            return
     _scan_tabel_base_dir()
     TABEL_LAST_SCAN_TS = time.time()
+
+
+def _schedule_tabel_scan(force=False):
+    global TABEL_SCAN_THREAD
+
+    def _worker():
+        if not TABEL_SCAN_LOCK.acquire(blocking=False):
+            return
+        try:
+            now_ts = time.time()
+            with TABEL_INDEX_LOCK:
+                has_index = bool(TABEL_INDEX)
+            if not force and (now_ts - TABEL_LAST_SCAN_TS) < TABEL_SCAN_INTERVAL_SEC and has_index:
+                return
+            _run_tabel_scan()
+        finally:
+            TABEL_SCAN_LOCK.release()
+
+    if TABEL_SCAN_THREAD and TABEL_SCAN_THREAD.is_alive():
+        return
+    TABEL_SCAN_THREAD = threading.Thread(target=_worker, name='tabel-scan', daemon=True)
+    TABEL_SCAN_THREAD.start()
+
+
+def ensure_tabel_index(force=False, blocking=False):
+    now_ts = time.time()
+    with TABEL_INDEX_LOCK:
+        has_index = bool(TABEL_INDEX)
+    if not force and (now_ts - TABEL_LAST_SCAN_TS) < TABEL_SCAN_INTERVAL_SEC and has_index:
+        return
+    if blocking or force:
+        with TABEL_SCAN_LOCK:
+            _run_tabel_scan()
+        return
+    _schedule_tabel_scan(force=force)
 
 
 def _tabel_index_summary():
@@ -411,131 +524,6 @@ def _tabel_index_summary():
     }
 
 
-def get_tabel_file_access_identity():
-    """
-    Учётная запись ОС, под которой процесс читает UNC-пути (\\\\srv-doc\\...).
-    Это НЕ логин пользователя, вошедшего на портал через LDAP.
-    """
-    win_user = (os.environ.get('USERNAME') or '').strip()
-    win_domain = (os.environ.get('USERDOMAIN') or '').strip()
-    process_user = (getpass.getuser() or '').strip()
-    if win_domain and win_user:
-        display = f'{win_domain}\\{win_user}'
-    else:
-        display = process_user or 'не определено'
-    return {
-        'display': display,
-        'process_user': process_user,
-        'windows_username': win_user,
-        'windows_domain': win_domain,
-        'computer_name': (os.environ.get('COMPUTERNAME') or '').strip(),
-        'ldap_bind_note': (
-            'Учётка LDAP из настроек приложения (bind_dn) используется только для '
-            'входа на портал и поиска в AD, не для чтения папки табелей.'
-        ),
-        'access_note': (
-            'Сетевые папки табеля читает сервер под учётной записью процесса '
-            '(python app.py, Gunicorn, служба Windows). Ей на srv-doc нужны права '
-            'на чтение \\\\srv-doc\\ТАБЕЛЬ и файла списка руководителей.'
-        ),
-    }
-
-
-def build_tabel_diagnostics(force_scan=False, portal_username=None):
-    if force_scan:
-        ensure_tabel_index(force=True)
-    else:
-        ensure_tabel_index()
-    checks = []
-    file_access = get_tabel_file_access_identity()
-    portal_login = normalize_ad_username(portal_username or '')
-    portal_can_view = bool(portal_login and can_view_tabel(portal_username))
-    portal_is_master = portal_login in MASTER_ADMINS
-
-    def add_check(name, ok, detail='', **extra):
-        checks.append({'name': name, 'ok': bool(ok), 'detail': detail, **extra})
-
-    if portal_login:
-        portal_detail = portal_login
-        if portal_is_master:
-            portal_detail += ' (мастер-администратор — доступ к табелю всегда)'
-        add_check(
-            'Доступ к странице табеля (ваш вход на портал)',
-            portal_can_view,
-            portal_detail,
-        )
-
-    add_check(
-        'Учётная запись сервера для \\\\srv-doc',
-        True,
-        file_access['display'],
-    )
-
-    add_check(
-        'Каталог табелей (TABEL_BASE_DIR)',
-        os.path.exists(TABEL_BASE_DIR),
-        TABEL_BASE_DIR,
-        env='TABEL_BASE_DIR',
-    )
-    if os.path.exists(TABEL_BASE_DIR):
-        try:
-            sample = os.listdir(TABEL_BASE_DIR)[:5]
-            add_check('Чтение каталога табелей', True, f'Примеры в корне: {", ".join(sample) or "(пусто)"}')
-        except OSError as exc:
-            add_check('Чтение каталога табелей', False, str(exc))
-
-    add_check(
-        'Список руководителей (TABEL_LEADERS_FILE)',
-        os.path.exists(TABEL_LEADERS_FILE),
-        TABEL_LEADERS_FILE,
-        env='TABEL_LEADERS_FILE',
-    )
-    cache_exists = os.path.exists(TABEL_CACHE_FILE)
-    cache_size = os.path.getsize(TABEL_CACHE_FILE) if cache_exists else 0
-    add_check(
-        'Локальный кэш табелей',
-        cache_exists,
-        f'{TABEL_CACHE_FILE} ({cache_size} байт)' if cache_exists else f'Файл {TABEL_CACHE_FILE} ещё не создан',
-        env='TABEL_CACHE_FILE',
-    )
-    add_check('Лист Excel', True, TABEL_SHEET_NAME, env='TABEL_SHEET_NAME')
-
-    last_scan_label = (
-        datetime.fromtimestamp(TABEL_LAST_SCAN_TS, APP_TZ).strftime('%d.%m.%Y %H:%M:%S')
-        if TABEL_LAST_SCAN_TS
-        else 'ещё не выполнялось'
-    )
-    index_summary = _tabel_index_summary()
-    files_ok = (
-        os.path.exists(TABEL_BASE_DIR)
-        and os.path.exists(TABEL_LEADERS_FILE)
-        and index_summary['unique_employees'] > 0
-        and not TABEL_LAST_SCAN_ERRORS
-    )
-    return {
-        'checked_at': datetime.now(APP_TZ).isoformat(timespec='seconds'),
-        'ok': files_ok,
-        'files_ok': files_ok,
-        'portal_access': {
-            'login': portal_login,
-            'can_view': portal_can_view,
-            'is_master_admin': portal_is_master,
-        },
-        'file_access_identity': file_access,
-        'paths': {
-            'base_dir': TABEL_BASE_DIR,
-            'leaders_file': TABEL_LEADERS_FILE,
-            'cache_file': os.path.abspath(TABEL_CACHE_FILE),
-            'sheet_name': TABEL_SHEET_NAME,
-        },
-        'checks': checks,
-        'last_scan_at': last_scan_label,
-        'last_scan_stats': dict(TABEL_LAST_SCAN_STATS),
-        'last_scan_errors': list(TABEL_LAST_SCAN_ERRORS),
-        'index': index_summary,
-    }
-
-
 def _tabel_get_current_status(fio):
     now = datetime.now()
     curr_period = f'{str(now.year)[2:]}_{now.month:02d}'
@@ -561,7 +549,7 @@ def _tabel_get_current_status(fio):
     return 'unknown'
 
 
-def get_tabel_leaders_data():
+def get_tabel_leaders_data(use_network=True):
     global TABEL_LEADERS_CACHE, TABEL_LEADERS_MTIME
     categories = [
         'Руководство',
@@ -580,31 +568,34 @@ def get_tabel_leaders_data():
                 leader['status_cls'] = f"st-{_tabel_get_current_status(leader.get('fio', ''))}"
         return TABEL_LEADERS_CACHE
     data = {category: [] for category in categories}
-    if not os.path.exists(TABEL_LEADERS_FILE):
-        return data
-    try:
-        workbook = openpyxl.load_workbook(TABEL_LEADERS_FILE, data_only=True)
-        sheet = workbook.active
-        current_category = None
-        for row in sheet.iter_rows(values_only=True):
-            first_val = _tabel_clean_fio(row[0] if row else '')
-            if not first_val:
-                continue
-            matched_category = next((cat for cat in categories if cat.lower() == first_val.lower()), None)
-            if matched_category:
-                current_category = matched_category
-                continue
-            if current_category and TABEL_FIO_RE.match(first_val):
-                status = _tabel_get_current_status(first_val)
-                data[current_category].append({
-                    'fio': first_val,
-                    'info': f"{str((row[1] if len(row) > 1 else '') or '')} {str((row[2] if len(row) > 2 else '') or '')}".strip(),
-                    'status_cls': f'st-{status}'
-                })
-        TABEL_LEADERS_CACHE = data
-        TABEL_LEADERS_MTIME = current_mtime
-    except Exception:
-        return data
+    if not use_network:
+        return data if not TABEL_LEADERS_CACHE else TABEL_LEADERS_CACHE
+    with _tabel_unc_connection():
+        if not os.path.exists(TABEL_LEADERS_FILE):
+            return data
+        try:
+            workbook = openpyxl.load_workbook(TABEL_LEADERS_FILE, data_only=True)
+            sheet = workbook.active
+            current_category = None
+            for row in sheet.iter_rows(values_only=True):
+                first_val = _tabel_clean_fio(row[0] if row else '')
+                if not first_val:
+                    continue
+                matched_category = next((cat for cat in categories if cat.lower() == first_val.lower()), None)
+                if matched_category:
+                    current_category = matched_category
+                    continue
+                if current_category and TABEL_FIO_RE.match(first_val):
+                    status = _tabel_get_current_status(first_val)
+                    data[current_category].append({
+                        'fio': first_val,
+                        'info': f"{str((row[1] if len(row) > 1 else '') or '')} {str((row[2] if len(row) > 2 else '') or '')}".strip(),
+                        'status_cls': f'st-{status}'
+                    })
+            TABEL_LEADERS_CACHE = data
+            TABEL_LEADERS_MTIME = current_mtime
+        except Exception:
+            return data
     return data
 
 
@@ -1310,7 +1301,7 @@ def tabel_page():
         return redirect(url_for('login_page'))
     if not can_view_tabel(session.get('username')):
         return redirect(url_for('index'))
-    ensure_tabel_index()
+    ensure_tabel_index(blocking=False)
     now = datetime.now()
     current_period_key = f"{str(now.year)[2:]}_{now.month:02d}"
     with TABEL_INDEX_LOCK:
@@ -1334,8 +1325,8 @@ def tabel_page():
         user=session.get('username'),
         user_display=session.get('display_name') or session.get('username'),
         periods=human_periods,
-        leaders=get_tabel_leaders_data(),
-        current_period=current_period_key
+        leaders=get_tabel_leaders_data(use_network=False),
+        current_period=current_period_key,
     )
 
 
@@ -1354,10 +1345,11 @@ def tabel_meta():
         return jsonify(success=False, error='Требуется авторизация'), 403
     if not can_view_tabel(session.get('username')):
         return jsonify(success=False, error='Нет доступа к табелю'), 403
-    ensure_tabel_index()
+    ensure_tabel_index(blocking=False)
     now = datetime.now()
-    source_available = os.path.exists(TABEL_BASE_DIR)
-    leaders_source_available = os.path.exists(TABEL_LEADERS_FILE)
+    index_summary = _tabel_index_summary()
+    source_available = bool(index_summary.get('unique_employees'))
+    leaders_source_available = bool(TABEL_LEADERS_CACHE)
     current_period = f'{str(now.year)[2:]}_{now.month:02d}'
     with TABEL_INDEX_LOCK:
         all_periods = set()
@@ -1385,7 +1377,6 @@ def tabel_meta():
             yy = str(year)[2:]
             mm = f'{month_index:02d}'
             payload.append({'key': f'{yy}_{mm}', 'label': f'{mm}.{year}'})
-    index_summary = _tabel_index_summary()
     return jsonify({
         'periods': payload,
         'current_period': current_period,
@@ -1401,26 +1392,14 @@ def tabel_meta():
     })
 
 
-@app.route('/api/tabel/diagnostics')
-def tabel_diagnostics_api():
-    if not session.get('logged_in'):
-        return jsonify(success=False, error='Требуется авторизация'), 403
-    if not can_view_tabel(session.get('username')):
-        return jsonify(success=False, error='Нет доступа к табелю'), 403
-    force = request.args.get('force') == '1'
-    if force and session.get('username') not in MASTER_ADMINS:
-        force = False
-    return jsonify(build_tabel_diagnostics(force_scan=force, portal_username=session.get('username')))
-
-
 @app.route('/api/tabel/leaders')
 def tabel_leaders():
     if not session.get('logged_in'):
         return jsonify(success=False, error='Требуется авторизация'), 403
     if not can_view_tabel(session.get('username')):
         return jsonify(success=False, error='Нет доступа к табелю'), 403
-    ensure_tabel_index()
-    return jsonify(get_tabel_leaders_data())
+    ensure_tabel_index(blocking=False)
+    return jsonify(get_tabel_leaders_data(use_network=True))
 
 
 @app.route('/api/tabel/search-fio')
@@ -1429,7 +1408,7 @@ def tabel_search_fio():
         return jsonify([]), 403
     if not can_view_tabel(session.get('username')):
         return jsonify([]), 403
-    ensure_tabel_index()
+    ensure_tabel_index(blocking=False)
     query = (request.args.get('q') or '').strip().lower()
     if not query:
         return jsonify([])
@@ -1451,7 +1430,7 @@ def tabel_status_month():
         return jsonify(success=False, error='Требуется авторизация'), 403
     if not can_view_tabel(session.get('username')):
         return jsonify({'error': 'forbidden'}), 403
-    ensure_tabel_index()
+    ensure_tabel_index(blocking=False)
     fio = (request.args.get('fio') or '').strip()
     period = (request.args.get('period') or '').strip()
     if not fio or not period or '_' not in period:
@@ -1500,8 +1479,8 @@ def tabel_leaders_compat():
         return jsonify([]), 403
     if not can_view_tabel(session.get('username')):
         return jsonify([]), 403
-    ensure_tabel_index()
-    return jsonify(get_tabel_leaders_data())
+    ensure_tabel_index(blocking=False)
+    return jsonify(get_tabel_leaders_data(use_network=True))
 
 
 @app.route('/search_fio')
@@ -3457,6 +3436,7 @@ if __name__ == '__main__':
     init_db()
     _tabel_load_cache()
     _tabel_rebuild_index_from_cache()
+    _schedule_tabel_scan(force=False)
     port = int(os.environ.get('PORT', '5004'))
     debug = os.environ.get('FLASK_DEBUG', '1') == '1'
     app.run(host='0.0.0.0', port=port, debug=debug, threaded=True)
