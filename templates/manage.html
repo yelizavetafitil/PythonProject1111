@@ -228,6 +228,14 @@
             margin: 12px 0;
             min-height: 34px;
         }
+        .users-group-collapsed-summary {
+            margin: 0;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: #f4f7fc;
+            border: 1px solid #dfe8f5;
+        }
+        .users-group-collapsed-summary p:last-child { margin-bottom: 0; }
         .member-chip {
             display: inline-flex;
             align-items: center;
@@ -549,6 +557,7 @@
     }
     renderIcons();
     let groupsState = [];
+    let usersGroupListExpanded = false;
     let phonebookAccessState = [];
     let tabelAccessState = [];
     let bookingAccessState = [];
@@ -631,6 +640,35 @@
             .replaceAll("'", '&#039;');
     }
 
+    function setUsersGroupListExpanded(show) {
+        usersGroupListExpanded = !!show;
+        renderGroups();
+    }
+
+    function renderGroupMembersHtml(g) {
+        const isDefaultUsersGroup = g.name === 'Пользователи';
+        if (!g.members.length) {
+            return '<div class="small text-muted w-100">Участники пока не добавлены.</div>';
+        }
+        if (isDefaultUsersGroup && !usersGroupListExpanded) {
+            return `
+                <div class="users-group-collapsed-summary w-100">
+                    <p class="small text-muted mb-2">Состав заполняется из Active Directory. Полный список логинов по умолчанию скрыт — для работы достаточно знать, что в группе <strong>${g.members.length}</strong> учётных записей.</p>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setUsersGroupListExpanded(true)">Показать список (${g.members.length})</button>
+                </div>`;
+        }
+        let html = '';
+        if (isDefaultUsersGroup && usersGroupListExpanded) {
+            html += '<div class="w-100 mb-1"><button type="button" class="btn btn-link btn-sm p-0 text-decoration-none" onclick="setUsersGroupListExpanded(false)">Скрыть список</button></div>';
+        }
+        html += g.members.map((m, idx) => `
+                            <div class="member-chip">
+                                <span>${escapeHtml(m)}</span>
+                                <button class="chip-remove" title="Удалить участника" onclick="removeMemberByIndex(${g.id}, ${idx})">&times;</button>
+                            </div>`).join('');
+        return html;
+    }
+
     function renderGroups() {
         document.getElementById('gList').innerHTML = groupsState.map(g => `
             <div class="group-item active" id="card-${g.id}">
@@ -639,14 +677,7 @@
                     <button class="btn btn-sm text-danger p-0" onclick="delG(${g.id})"><i data-lucide="trash-2" size="16"></i></button>
                 </div>
                 <div class="member-list">
-                    ${g.members.length
-                        ? g.members.map((m, idx) => `
-                            <div class="member-chip">
-                                <span>${escapeHtml(m)}</span>
-                                <button class="chip-remove" title="Удалить участника" onclick="removeMemberByIndex(${g.id}, ${idx})">&times;</button>
-                            </div>`).join('')
-                        : '<div class="small text-muted">Участники пока не добавлены.</div>'
-                    }
+                    ${renderGroupMembersHtml(g)}
                 </div>
                 <div class="ad-search-box">
                     <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
