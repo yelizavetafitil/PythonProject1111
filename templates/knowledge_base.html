@@ -49,20 +49,28 @@
         body.kb-body .navbar {
             flex-shrink: 0;
         }
-        body.kb-body .kb-page-wrap {
+        .kb-page-wrap {
+            width: 100%;
+        }
+        body.kb-body .kb-page-wrap.main-container {
             flex: 1 1 auto;
             min-height: 0;
             overflow-y: auto;
             overflow-x: hidden;
             -webkit-overflow-scrolling: touch;
+            margin: 0 auto;
+            padding: 26px 0 34px;
         }
         /* Категория + PDF: всё влезает, скролл только в списке файлов (если длинный) и внутри iframe PDF */
-        body.kb-body.kb-mode-reader .kb-page-wrap {
+        body.kb-body.kb-mode-reader .kb-page-wrap.main-container {
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            padding-top: 8px;
-            padding-bottom: 8px;
+            padding-top: 26px;
+            padding-bottom: 34px;
+        }
+        .kb-browse-panel {
+            width: 100%;
         }
         body.kb-body.kb-mode-reader .kb-reader-panel.panel {
             flex: 1 1 auto;
@@ -146,17 +154,6 @@
         .btn-outline-secondary:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
         .btn-light { background: var(--primary); border-color: var(--primary); color: #fff; }
         .btn-light:hover { background: var(--primary-soft); border-color: var(--primary-soft); color: #fff; }
-        .kb-page-wrap {
-            max-width: 100%;
-            margin: 0 auto;
-            padding-top: 8px;
-            padding-bottom: 12px;
-        }
-        .kb-browse-panel {
-            max-width: 1280px;
-            margin-left: auto;
-            margin-right: auto;
-        }
         .kb-reader-panel {
             width: 100%;
         }
@@ -525,7 +522,7 @@
 </head>
 <body class="kb-body">
 <nav class="navbar">
-    <div class="container-fluid kb-nav-inner px-2 px-lg-3 d-flex justify-content-between align-items-center">
+    <div class="container d-flex justify-content-between align-items-center">
         <a href="/" class="logo"><img src="{{ url_for('project_logo') }}" alt="Логотип компании"></a>
         <div class="topbar-actions">
             <span class="topbar-user fw-medium text-muted">{{ user }}</span>
@@ -535,7 +532,7 @@
     </div>
 </nav>
 
-<div class="container-fluid kb-page-wrap px-2 px-lg-3">
+<div class="main-container container kb-page-wrap">
     <section id="browsePanel" class="panel kb-browse-panel">
         <div class="browse-hero">
             <h2 class="browse-title">Полезные ресурсы</h2>
