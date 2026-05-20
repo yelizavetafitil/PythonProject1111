@@ -87,7 +87,7 @@
 </div>
 
 <div class="layout">
-    <div class="panel">
+    <div class="panel" id="tabelLeaderPanelLeft">
         <h3>Руководство</h3>
         {% for l in leaders['Руководство'] %}
         <div class="leader-item {{l.status_cls}}" data-fio="{{l.fio}}" onclick="loadFio('{{l.fio}}')">
@@ -143,7 +143,7 @@
         </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="tabelLeaderPanelRight">
         <h3>Персонал при руководстве</h3>
         {% for l in leaders['Персонал при руководстве'] %}
         <div class="leader-item {{l.status_cls}}" data-fio="{{l.fio}}" onclick="loadFio('{{l.fio}}')">
@@ -236,19 +236,134 @@
     const tabelLoadBanner = document.getElementById('tabelLoadBanner');
     if (tabelLoadBanner) tabelLoadBanner.style.display = 'block';
 
+    const tabelLeaderPanelLeft = document.getElementById('tabelLeaderPanelLeft');
+    const tabelLeaderPanelRight = document.getElementById('tabelLeaderPanelRight');
+    const TABEL_LEFT_SECTIONS = [
+        ['Руководство', 'Руководство'],
+        ['Производственные отделы', 'Производственные отделы'],
+        ['Главные инженеры проекта', 'Главные инженеры проекта'],
+    ];
+    const TABEL_RIGHT_SECTIONS = [
+        ['Персонал при руководстве', 'Персонал при руководстве'],
+        ['Непроизводственные отделы', 'Непроизводственные отделы'],
+    ];
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+    function escapeAttr(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function leadersApiTotal(leadersData) {
+        if (!leadersData || typeof leadersData !== 'object') return 0;
+        let n = 0;
+        for (const k of Object.keys(leadersData)) {
+            const arr = leadersData[k];
+            n += Array.isArray(arr) ? arr.length : 0;
+        }
+        return n;
+    }
+
+    function renderLeaderPanelsFromApi(leadersData) {
+        if (!tabelLeaderPanelLeft || !tabelLeaderPanelRight) return;
+        renderLeaderColumn(tabelLeaderPanelLeft, TABEL_LEFT_SECTIONS, leadersData);
+        renderLeaderColumn(tabelLeaderPanelRight, TABEL_RIGHT_SECTIONS, leadersData);
+    }
+
+    function renderLeaderColumn(panelEl, sectionDefs, leadersData) {
+        let html = '';
+        for (const [title, key] of sectionDefs) {
+            html += `<h3>${escapeHtml(title)}</h3>`;
+            const items = Array.isArray(leadersData[key]) ? leadersData[key] : [];
+            for (const l of items) {
+                if (!l) continue;
+                const fio = l.fio || '';
+                const info = l.info || '';
+                const cls = l.status_cls || '';
+                html +=
+                    `<div class="leader-item ${cls}" data-fio="${escapeAttr(fio)}" onclick="loadFio(this.dataset.fio)">` +
+                    `<div class="status-dot"></div>` +
+                    `<div class="leader-content"><span class="l-fio">${escapeHtml(fio)}</span><span class="l-info">${escapeHtml(info)}</span></div>` +
+                    `</div>`;
+            }
+        }
+        panelEl.innerHTML = html;
+    }
+
+    function patchLeaderStatusClasses(leadersData) {
+        const nodes = document.querySelectorAll('.leader-item');
+        for (const cat in leadersData) {
+            const arr = leadersData[cat];
+            if (!Array.isArray(arr)) continue;
+            for (const l of arr) {
+                if (!l || !l.fio) continue;
+                for (let i = 0; i < nodes.length; i++) {
+                    const el = nodes[i];
+                    const df = el.dataset ? el.dataset.fio : '';
+                    if (df === l.fio) {
+                        el.className = `leader-item ${l.status_cls}`;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let lastIndexedEmployees = -1;
+
+    async function refreshTabelMeta() {
+        try {
+            const r = await fetch('/api/tabel/meta');
+            if (!r.ok) return;
+            const meta = await r.json();
+            const idx = meta.source && typeof meta.source.indexed_employees === 'number'
+                ? meta.source.indexed_employees : 0;
+            const indexGrew = lastIndexedEmployees >= 0 && idx > lastIndexedEmployees;
+            if (idx > lastIndexedEmployees) lastIndexedEmployees = idx;
+            const sel = document.getElementById('period');
+            if (meta.periods && meta.periods.length && sel) {
+                const want = [...meta.periods].map((p) => p.key).sort().join('|');
+                const have = [...sel.options].map((o) => o.value).sort().join('|');
+                if (want !== have) {
+                    const saved = sel.value;
+                    sel.innerHTML = meta.periods
+                        .map((p) => `<option value="${escapeAttr(p.key)}">${escapeHtml(p.label)}</option>`)
+                        .join('');
+                    if ([...sel.options].some((o) => o.value === saved)) sel.value = saved;
+                    else if (meta.current_period && [...sel.options].some((o) => o.value === meta.current_period)) sel.value = meta.current_period;
+                    if (fioInp.value.trim()) fetchData(true);
+                }
+            }
+            if (indexGrew && fioInp.value.trim()) fetchData(true);
+        } catch (e) {
+            console.log('Не удалось обновить метаданные табеля', e);
+        }
+    }
+
     async function refreshLeadersFromApi() {
         try {
             const r = await fetch('/api/leaders');
             if (!r.ok) return;
             const leadersData = await r.json();
-            let total = 0;
-            for (const cat in leadersData) {
-                (leadersData[cat] || []).forEach(l => {
-                    total += 1;
-                    const el = document.querySelector(`.leader-item[data-fio="${l.fio}"]`);
-                    if (el) el.className = `leader-item ${l.status_cls}`;
-                });
+            const total = leadersApiTotal(leadersData);
+            const domCount = document.querySelectorAll('.leader-item').length;
+            /* Первая отрисовка с пустого SSR: после фона подтягиваем списки без F5 */
+            const needHydrate = total > 0 && domCount !== total;
+            if (needHydrate) {
+                renderLeaderPanelsFromApi(leadersData);
+            } else if (total > 0 && domCount === total) {
+                patchLeaderStatusClasses(leadersData);
+            } else if (total > 0) {
+                renderLeaderPanelsFromApi(leadersData);
             }
+
             if (tabelLoadBanner) {
                 if (total) {
                     tabelLoadBanner.style.display = 'none';
@@ -263,8 +378,13 @@
         }
     }
 
-    refreshLeadersFromApi();
-    setInterval(refreshLeadersFromApi, 5000);
+    async function pollTabelBackground() {
+        await refreshTabelMeta();
+        await refreshLeadersFromApi();
+    }
+
+    pollTabelBackground();
+    setInterval(pollTabelBackground, 5000);
 </script>
 </body>
 </html>
