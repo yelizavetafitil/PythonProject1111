@@ -710,13 +710,135 @@ def get_phonebook_contacts():
     return _phonebook_cache
 
 
-def can_view_extended_phonebook(username):
+# Внутренние URL портала → таблица «расширенного доступа» в /manage (скрин 2).
+RESOURCE_PATH_PRIVILEGE_TABLE = {
+    '/tabel': 'tabel_privileged_entities',
+    '/phonebook': 'phonebook_privileged_entities',
+    '/meeting-rooms': 'booking_privileged_entities',
+    '/gym-booking': 'booking_privileged_entities',
+    '/driver-trips': 'booking_privileged_entities',
+    '/ai-assistant': 'ai_privileged_entities',
+}
+
+
+def _resource_internal_path(url):
+    normalized = normalize_resource_url(url or '')
+    if not normalized:
+        return None
+    raw = normalized.split('?')[0].split('#')[0]
+    if raw.startswith('/'):
+        return raw.rstrip('/') or '/'
+    try:
+        parsed = urlparse(normalized)
+        if not parsed.netloc:
+            return None
+        host = (parsed.hostname or '').lower()
+        if host in ('127.0.0.1', 'localhost', '::1'):
+            p = parsed.path or '/'
+            return p.rstrip('/') or '/'
+        return None
+    except Exception:
+        return None
+
+
+def _load_resource_group_access_maps(conn):
+    members_rows = conn.execute('SELECT group_id, username FROM group_members').fetchall()
+    group_map = {}
+    for mr in members_rows:
+        gid = str(mr['group_id'])
+        group_map.setdefault(gid, []).append(normalize_ad_username(mr['username']))
+    users_group_row = conn.execute(
+        'SELECT id FROM groups WHERE name = ? COLLATE NOCASE',
+        (DEFAULT_USERS_GROUP_NAME,),
+    ).fetchone()
+    users_group_id = str(users_group_row['id']) if users_group_row else None
+    return group_map, users_group_id
+
+
+def _user_matches_resource_groups(username, group_ids, group_map, users_group_id, user_ad_groups):
+    login = normalize_ad_username(username)
+    if not group_ids:
+        return False
+    ad_lower = {g.strip().lower() for g in user_ad_groups if g}
+    for gid in group_ids:
+        if users_group_id and gid == users_group_id:
+            return True
+        allowed_entities = group_map.get(gid, [])
+        if login in allowed_entities or any(ag in allowed_entities for ag in ad_lower):
+            return True
+    return False
+
+
+def _user_has_group_access_to_resource_url(username, url_path, conn=None):
+    url_path = (url_path or '').rstrip('/') or '/'
+    login = normalize_ad_username(username)
+    if not login:
+        return False
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db_connection()
+    try:
+        user_ad_groups = get_user_ad_groups_by_username(login)
+        group_map, users_group_id = _load_resource_group_access_maps(conn)
+        rows = conn.execute('''
+            SELECT r.url, GROUP_CONCAT(ga.group_id) as group_ids
+            FROM resources r
+            LEFT JOIN resource_group_access ga ON r.id = ga.resource_id
+            GROUP BY r.id
+        ''').fetchall()
+        for row in rows:
+            path = _resource_internal_path(row['url'])
+            if path != url_path:
+                continue
+            g_ids = [g for g in (row['group_ids'] or '').split(',') if g]
+            if not g_ids:
+                return True
+            if _user_matches_resource_groups(login, g_ids, group_map, users_group_id, user_ad_groups):
+                return True
+        return False
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def can_access_portal_path(username, path):
+    """Доступ к странице: группа на карточке ресурса (скрин 1) ИЛИ запись в /manage (скрин 2)."""
     login = normalize_ad_username(username)
     if not login:
         return False
     if login in MASTER_ADMINS:
         return True
-    return _has_privileged_entity_access(login, 'phonebook_privileged_entities')
+    path = (path or '').rstrip('/') or '/'
+    table = RESOURCE_PATH_PRIVILEGE_TABLE.get(path)
+    if table and _has_privileged_entity_access(login, table):
+        return True
+    return _user_has_group_access_to_resource_url(login, path)
+
+
+def can_access_portal_resource(username, url, group_ids_str, group_map, users_group_id, user_ad_groups):
+    """Видимость плитки на главной — та же логика, что и can_access_portal_path."""
+    login = normalize_ad_username(username)
+    if not login:
+        return False
+    if login in MASTER_ADMINS:
+        return True
+    g_ids = [g for g in (group_ids_str or '').split(',') if g]
+    has_group = (
+        _user_matches_resource_groups(login, g_ids, group_map, users_group_id, user_ad_groups)
+        if g_ids else False
+    )
+    path = _resource_internal_path(normalize_resource_url(url))
+    priv_table = RESOURCE_PATH_PRIVILEGE_TABLE.get(path) if path else None
+    has_priv = _has_privileged_entity_access(login, priv_table) if priv_table else False
+    if not g_ids:
+        if priv_table:
+            return has_priv
+        return True
+    return has_group or has_priv
+
+
+def can_view_extended_phonebook(username):
+    return can_access_portal_path(username, '/phonebook')
 
 
 def _has_privileged_entity_access(login, table_name):
@@ -767,22 +889,11 @@ def can_manage_resources(username):
 
 
 def can_use_ai_assistant(username):
-    login = normalize_ad_username(username)
-    if not login:
-        return False
-    if login in MASTER_ADMINS:
-        return True
-    return _has_privileged_entity_access(login, 'ai_privileged_entities')
+    return can_access_portal_path(username, '/ai-assistant')
 
 
 def can_view_tabel(username):
-    """Доступ к /tabel — только записи из tabel_privileged_entities и мастер-админы."""
-    login = normalize_ad_username(username)
-    if not login:
-        return False
-    if login in MASTER_ADMINS:
-        return True
-    return _has_privileged_entity_access(login, 'tabel_privileged_entities')
+    return can_access_portal_path(username, '/tabel')
 
 
 def _build_ai_sso_url(username, display_name):
@@ -1216,6 +1327,8 @@ def phonebook_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
     username = session.get('username')
+    if not can_access_portal_path(username, '/phonebook'):
+        return redirect(url_for('index'))
     is_admin = username in MASTER_ADMINS
     can_view_private_phones = can_view_extended_phonebook(username)
     contacts = get_phonebook_contacts()
@@ -1232,6 +1345,8 @@ def phonebook_page():
 def meeting_rooms_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_access_portal_path(session.get('username'), '/meeting-rooms'):
+        return redirect(url_for('index'))
     is_admin = session.get('username') in MASTER_ADMINS
     return render_template(
         'meeting_rooms.html',
@@ -1247,6 +1362,8 @@ def meeting_rooms_page():
 def gym_booking_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_access_portal_path(session.get('username'), '/gym-booking'):
+        return redirect(url_for('index'))
     ensure_gym_room_exists()
     is_admin = session.get('username') in MASTER_ADMINS
     return render_template(
@@ -1264,6 +1381,8 @@ def driver_trips_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
     current_user = session.get('username')
+    if not can_access_portal_path(current_user, '/driver-trips'):
+        return redirect(url_for('index'))
     return render_template(
         'driver_trips.html',
         user_login=current_user,
@@ -1276,6 +1395,8 @@ def driver_trips_page():
 def knowledge_base_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
+        return redirect(url_for('index'))
     categories = _knowledge_base_collect_categories()
     return render_template(
         'knowledge_base.html',
@@ -1289,7 +1410,7 @@ def ai_assistant_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
     username = session.get('username')
-    if not can_use_ai_assistant(username):
+    if not can_access_portal_path(username, '/ai-assistant'):
         return redirect(url_for('index'))
     redirect_url = _build_ai_sso_url(username, session.get('display_name') or username)
     return redirect(redirect_url, code=302)
@@ -1299,7 +1420,7 @@ def ai_assistant_page():
 def tabel_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
-    if not can_view_tabel(session.get('username')):
+    if not can_access_portal_path(session.get('username'), '/tabel'):
         return redirect(url_for('index'))
     ensure_tabel_index(blocking=False)
     now = datetime.now()
@@ -1501,6 +1622,8 @@ def tabel_status_month_compat():
 def knowledge_base_categories():
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
+        return jsonify([]), 403
     payload = []
     for category in _knowledge_base_collect_categories():
         payload.append({
@@ -1514,6 +1637,8 @@ def knowledge_base_categories():
 def knowledge_base_files():
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
+        return jsonify([]), 403
     category = (request.args.get('category') or '').strip()
     if not category:
         return jsonify([]), 400
@@ -1523,6 +1648,8 @@ def knowledge_base_files():
 @app.route('/api/knowledge-base/search')
 def knowledge_base_search():
     if not session.get('logged_in'):
+        return jsonify([]), 403
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
         return jsonify([]), 403
     query = (request.args.get('q') or '').strip().lower()
     all_items = _knowledge_base_collect_all_files()
@@ -1540,6 +1667,8 @@ def knowledge_base_search():
 def knowledge_base_view_file(category_name, file_path):
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
+        return redirect(url_for('index'))
     target_path = _knowledge_base_resolve_file_path(category_name, file_path)
     if not target_path:
         return jsonify(success=False, error='Файл не найден'), 404
@@ -1550,6 +1679,8 @@ def knowledge_base_view_file(category_name, file_path):
 def knowledge_base_download_file(category_name, file_path):
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
+    if not can_access_portal_path(session.get('username'), '/knowledge-base'):
+        return redirect(url_for('index'))
     target_path = _knowledge_base_resolve_file_path(category_name, file_path)
     if not target_path:
         return jsonify(success=False, error='Файл не найден'), 404
@@ -2439,40 +2570,20 @@ def get_resources():
                 row['url'] = normalize_resource_url(row.get('url'))
             return jsonify([row for row in admin_rows if matches_search(row)])
 
-        members_rows = conn.execute("SELECT group_id, username FROM group_members").fetchall()
-        group_map = {}
-        for mr in members_rows:
-            gid = str(mr['group_id'])
-            if gid not in group_map: group_map[gid] = []
-            group_map[gid].append(mr['username'].lower())
-
-        users_group_row = conn.execute(
-            'SELECT id FROM groups WHERE name = ? COLLATE NOCASE',
-            (DEFAULT_USERS_GROUP_NAME,),
-        ).fetchone()
-        users_group_id = str(users_group_row['id']) if users_group_row else None
+        group_map, users_group_id = _load_resource_group_access_maps(conn)
 
         visible = []
         for r in rows:
-            g_ids = r['group_ids'].split(',') if r['group_ids'] else []
             row_dict = dict(r)
             row_dict['url'] = normalize_resource_url(row_dict.get('url'))
-            if row_dict['url'].rstrip('/') == '/tabel' and not can_view_tabel(u):
-                continue
-            if not g_ids:
-                if matches_search(row_dict):
-                    visible.append(row_dict)
-                continue
-            can_see = False
-            for gid in g_ids:
-                if users_group_id and gid == users_group_id:
-                    can_see = True
-                    break
-                allowed_entities = group_map.get(gid, [])
-                if u in allowed_entities or any(ag in allowed_entities for ag in user_ad_groups):
-                    can_see = True
-                    break
-            if can_see and matches_search(row_dict):
+            if can_access_portal_resource(
+                u,
+                row_dict['url'],
+                r['group_ids'],
+                group_map,
+                users_group_id,
+                user_ad_groups,
+            ) and matches_search(row_dict):
                 visible.append(row_dict)
         return jsonify(visible)
     finally:

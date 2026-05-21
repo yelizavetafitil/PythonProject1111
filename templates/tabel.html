@@ -369,7 +369,10 @@
                     tabelLoadBanner.style.display = 'none';
                 } else {
                     tabelLoadBanner.style.display = 'block';
-                    tabelLoadBanner.textContent = 'Нет связи с \\\\srv-doc — проверьте VPN';
+                    const idx = lastIndexedEmployees;
+                    tabelLoadBanner.textContent = idx > 0
+                        ? 'Список руководителей ещё загружается…'
+                        : 'Сервер не читает \\\\srv-doc (служба портала, не ваш VPN). Обратитесь к администратору.';
                 }
             }
             if (fioInp.value) fetchData(true);
