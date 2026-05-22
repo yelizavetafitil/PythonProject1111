@@ -317,12 +317,16 @@
     }
 
     let lastIndexedEmployees = -1;
+    let lastTabelSetupHint = '';
 
     async function refreshTabelMeta() {
         try {
             const r = await fetch('/api/tabel/meta');
             if (!r.ok) return;
             const meta = await r.json();
+            if (meta.source && meta.source.setup_hint) {
+                lastTabelSetupHint = meta.source.setup_hint;
+            }
             const idx = meta.source && typeof meta.source.indexed_employees === 'number'
                 ? meta.source.indexed_employees : 0;
             const indexGrew = lastIndexedEmployees >= 0 && idx > lastIndexedEmployees;
@@ -372,7 +376,7 @@
                     const idx = lastIndexedEmployees;
                     tabelLoadBanner.textContent = idx > 0
                         ? 'Список руководителей ещё загружается…'
-                        : 'Сервер не читает \\\\srv-doc (служба портала, не ваш VPN). Обратитесь к администратору.';
+                        : (lastTabelSetupHint || 'Сервер не читает табель: на Linux смонтируйте //srv-doc/ТАБЕЛЬ в /mnt/tabel (iocharset=utf8). Пути в настройках не меняйте.');
                 }
             }
             if (fioInp.value) fetchData(true);

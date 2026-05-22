@@ -63,8 +63,9 @@
 - /api/tabel/status-month
 
 Источник данных и кэш:
-- TABEL_BASE_DIR (по умолчанию: \\srv-doc\ТАБЕЛЬ)
-- TABEL_LEADERS_FILE (по умолчанию: \\srv-doc\ТАБЕЛЬ\ОЦ\Список руководителей.xlsx)
+- TABEL_BASE_DIR (по умолчанию \\srv-doc\ТАБЕЛЬ — на Linux и Windows одинаково в конфиге)
+- TABEL_LEADERS_FILE (по умолчанию \\srv-doc\ТАБЕЛЬ\ОЦ\Список руководителей.xlsx)
+- tabel_fs.py — на Linux: кодировки имён (utf-8/cp1251) и чтение UNC через mount /mnt/tabel без смены путей в настройках
 - TABEL_SHEET_NAME (по умолчанию: Табель_3)
 - TABEL_CACHE_FILE (по умолчанию: tabel_portal_cache.json)
 

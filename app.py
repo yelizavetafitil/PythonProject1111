@@ -41,6 +41,21 @@ try:
 except Exception:
     xlrd = None
 
+from tabel_fs import (
+    configure_tabel_locale,
+    join_tabel_path,
+    linux_unc_misconfiguration,
+    listdir_tabel,
+    normalize_tabel_path,
+    tabel_default_base_dir,
+    tabel_default_leaders_file,
+    tabel_path_exists,
+    tabel_path_status,
+    walk_tabel_excel,
+)
+
+configure_tabel_locale()
+
 # --- ЗАПЛАТКА ДЛЯ LDAP3 ---
 if not hasattr(collections, 'MutableMapping'):
     import collections.abc
@@ -91,8 +106,8 @@ APP_TZ = ZoneInfo('Europe/Minsk')
 _phonebook_cache = None
 _phonebook_mtime = None
 _ad_groups_cache = {}
-TABEL_BASE_DIR = os.environ.get('TABEL_BASE_DIR', r'\\srv-doc\ТАБЕЛЬ')
-TABEL_LEADERS_FILE = os.environ.get('TABEL_LEADERS_FILE', r'\\srv-doc\ТАБЕЛЬ\ОЦ\Список руководителей.xlsx')
+TABEL_BASE_DIR = os.environ.get('TABEL_BASE_DIR', tabel_default_base_dir())
+TABEL_LEADERS_FILE = os.environ.get('TABEL_LEADERS_FILE', tabel_default_leaders_file())
 TABEL_SHEET_NAME = os.environ.get('TABEL_SHEET_NAME', 'Табель_3')
 TABEL_CACHE_FILE = os.environ.get('TABEL_CACHE_FILE', 'tabel_portal_cache.json')
 TABEL_FILE_PATTERN = re.compile(r'^(.+?)_(\d{2})_(\d{2})\.xlsx?$', re.IGNORECASE)
@@ -182,7 +197,8 @@ def _tabel_parse_filename(filename):
 
 
 def _tabel_read_any_excel(path):
-    if not path or not os.path.exists(path):
+    path = normalize_tabel_path(path)
+    if not path or not tabel_path_exists(path):
         return None
     try:
         if path.lower().endswith('.xlsx'):
@@ -253,10 +269,25 @@ def _windows_net_use(unc_path, username, password, *, disconnect=False):
 
 @contextmanager
 def _tabel_unc_connection():
-    """Сессия SMB под TABEL_SMB_USER (по умолчанию oc1@local.energoprom.by)."""
+    """Windows: net use. Linux: чтение с mount (пути /mnt/tabel, см. tabel_fs)."""
     global TABEL_LAST_SMB_CONNECT
+    linux_misconfig = linux_unc_misconfiguration(TABEL_BASE_DIR, TABEL_LEADERS_FILE)
+    if linux_misconfig:
+        TABEL_LAST_SMB_CONNECT = {'connected': False, 'user': None, 'message': linux_misconfig}
+        yield TABEL_LAST_SMB_CONNECT
+        return
+    if sys.platform != 'win32':
+        base = normalize_tabel_path(TABEL_BASE_DIR)
+        ok = tabel_path_exists(base)
+        TABEL_LAST_SMB_CONNECT = {
+            'connected': ok,
+            'user': None,
+            'message': f'Linux mount: {base}' if ok else f'Нет каталога {base} (смонтируйте //srv-doc/ТАБЕЛЬ)',
+        }
+        yield TABEL_LAST_SMB_CONNECT
+        return
     if not _tabel_smb_configured():
-        TABEL_LAST_SMB_CONNECT = {'connected': False, 'user': None, 'message': 'Отключено (не Windows или TABEL_SMB_ENABLED=0)'}
+        TABEL_LAST_SMB_CONNECT = {'connected': False, 'user': None, 'message': 'Отключено (TABEL_SMB_ENABLED=0)'}
         yield TABEL_LAST_SMB_CONNECT
         return
     unc = TABEL_BASE_DIR
@@ -305,7 +336,15 @@ def _scan_tabel_base_dir():
     }
 
     with _tabel_unc_connection() as smb:
+        if linux_unc_misconfiguration(TABEL_BASE_DIR, TABEL_LEADERS_FILE):
+            errors.append({
+                'stage': 'linux_paths',
+                'path': TABEL_BASE_DIR,
+                'message': linux_unc_misconfiguration(TABEL_BASE_DIR, TABEL_LEADERS_FILE),
+            })
         smb_ready = not _tabel_smb_configured() or bool(smb.get('connected'))
+        if sys.platform != 'win32':
+            smb_ready = bool(smb.get('connected'))
         if _tabel_smb_configured() and not smb_ready:
             errors.append({
                 'stage': 'smb_connect',
@@ -319,106 +358,101 @@ def _scan_tabel_base_dir():
             TABEL_LAST_SCAN_STATS = stats
             return
 
-        if not os.path.exists(TABEL_BASE_DIR):
+        base_dir = normalize_tabel_path(TABEL_BASE_DIR)
+        if not tabel_path_exists(base_dir):
             errors.append({
                 'stage': 'base_dir',
-                'path': TABEL_BASE_DIR,
+                'path': base_dir,
                 'message': 'Каталог не найден или недоступен по сети',
             })
         else:
             try:
-                os.listdir(TABEL_BASE_DIR)
+                listdir_tabel(base_dir)
             except OSError as exc:
                 errors.append({
                     'stage': 'base_dir',
-                    'path': TABEL_BASE_DIR,
+                    'path': base_dir,
                     'message': f'Нет прав на чтение каталога: {exc}',
                 })
 
         try:
-            walk_roots = [TABEL_BASE_DIR] if os.path.exists(TABEL_BASE_DIR) else []
-            for root, _, files in os.walk(TABEL_BASE_DIR) if walk_roots else []:
-                rel = os.path.relpath(root, TABEL_BASE_DIR)
-                dept = rel.split(os.sep)[0] if rel != '.' else 'Общий'
-                for filename in files:
-                    if not filename.lower().endswith(('.xls', '.xlsx')) or filename.startswith('~$'):
+            for root, dept, filename in walk_tabel_excel(base_dir):
+                mm, yy = _tabel_parse_filename(filename)
+                if not mm:
+                    continue
+                try:
+                    if 2000 + int(yy) < current_year - 1:
                         continue
-                    mm, yy = _tabel_parse_filename(filename)
-                    if not mm:
-                        continue
-                    try:
-                        if 2000 + int(yy) < current_year - 1:
+                except Exception:
+                    continue
+                full_path = join_tabel_path(root, filename)
+                found_files.add(full_path)
+                stats['files_matched'] += 1
+                try:
+                    current_mtime = os.path.getmtime(full_path)
+                except OSError as exc:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'mtime',
+                        'path': full_path,
+                        'message': str(exc),
+                    })
+                    continue
+                cached = TABEL_FILE_CACHE.get(full_path)
+                if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
+                    stats['files_skipped_cache'] += 1
+                    stats['employees_indexed'] += len(cached.get('emps') or [])
+                    continue
+                df = _tabel_read_any_excel(full_path)
+                if df is None:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'read_excel',
+                        'path': full_path,
+                        'message': f'Не удалось прочитать лист «{TABEL_SHEET_NAME}»',
+                    })
+                    continue
+                employees = []
+                try:
+                    for row_index, raw_name in enumerate(df.iloc[:, 1]):
+                        name = _tabel_clean_fio(raw_name)
+                        if not name or not TABEL_FIO_RE.match(name):
                             continue
-                    except Exception:
-                        continue
-                    full_path = os.path.join(root, filename)
-                    found_files.add(full_path)
-                    stats['files_matched'] += 1
-                    try:
-                        current_mtime = os.path.getmtime(full_path)
-                    except OSError as exc:
-                        stats['files_failed'] += 1
-                        errors.append({
-                            'stage': 'mtime',
-                            'path': full_path,
-                            'message': str(exc),
-                        })
-                        continue
-                    cached = TABEL_FILE_CACHE.get(full_path)
-                    if isinstance(cached, dict) and cached.get('mtime') == current_mtime:
-                        stats['files_skipped_cache'] += 1
-                        stats['employees_indexed'] += len(cached.get('emps') or [])
-                        continue
-                    df = _tabel_read_any_excel(full_path)
-                    if df is None:
-                        stats['files_failed'] += 1
-                        errors.append({
-                            'stage': 'read_excel',
-                            'path': full_path,
-                            'message': f'Не удалось прочитать лист «{TABEL_SHEET_NAME}»',
-                        })
-                        continue
-                    employees = []
-                    try:
-                        for row_index, raw_name in enumerate(df.iloc[:, 1]):
-                            name = _tabel_clean_fio(raw_name)
-                            if not name or not TABEL_FIO_RE.match(name):
-                                continue
-                            row_data = df.iloc[row_index].values
-                            days_data = []
-                            for day_idx in range(31):
-                                col_idx = 2 + day_idx
-                                if col_idx < len(row_data):
-                                    day_val = row_data[col_idx]
-                                    days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
-                                else:
-                                    days_data.append('')
-                            employees.append({'fio': name, 'days': days_data})
-                    except Exception as exc:
-                        stats['files_failed'] += 1
-                        errors.append({
-                            'stage': 'parse_rows',
-                            'path': full_path,
-                            'message': str(exc),
-                        })
-                        continue
-                    if employees:
-                        TABEL_FILE_CACHE[full_path] = {
-                            'mtime': current_mtime,
-                            'dept': dept,
-                            'yy_mm': f'{yy}_{mm}',
-                            'emps': employees
-                        }
-                        cache_updated = True
-                        stats['files_parsed'] += 1
-                        stats['employees_indexed'] += len(employees)
-                    else:
-                        stats['files_failed'] += 1
-                        errors.append({
-                            'stage': 'empty_sheet',
-                            'path': full_path,
-                            'message': 'В файле нет строк с ФИО в ожидаемом формате',
-                        })
+                        row_data = df.iloc[row_index].values
+                        days_data = []
+                        for day_idx in range(31):
+                            col_idx = 2 + day_idx
+                            if col_idx < len(row_data):
+                                day_val = row_data[col_idx]
+                                days_data.append(str(day_val).strip() if not pd.isna(day_val) else '')
+                            else:
+                                days_data.append('')
+                        employees.append({'fio': name, 'days': days_data})
+                except Exception as exc:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'parse_rows',
+                        'path': full_path,
+                        'message': str(exc),
+                    })
+                    continue
+                if employees:
+                    TABEL_FILE_CACHE[full_path] = {
+                        'mtime': current_mtime,
+                        'dept': dept,
+                        'yy_mm': f'{yy}_{mm}',
+                        'emps': employees
+                    }
+                    cache_updated = True
+                    stats['files_parsed'] += 1
+                    stats['employees_indexed'] += len(employees)
+                else:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'empty_sheet',
+                        'path': full_path,
+                        'message': 'В файле нет строк с ФИО в ожидаемом формате',
+                    })
         except OSError as exc:
             errors.append({
                 'stage': 'walk',
@@ -426,15 +460,16 @@ def _scan_tabel_base_dir():
                 'message': str(exc),
             })
 
-        if not os.path.exists(TABEL_LEADERS_FILE):
+        leaders_path = normalize_tabel_path(TABEL_LEADERS_FILE)
+        if not tabel_path_exists(leaders_path):
             errors.append({
                 'stage': 'leaders_file',
-                'path': TABEL_LEADERS_FILE,
+                'path': leaders_path,
                 'message': 'Файл списка руководителей не найден',
             })
         else:
             try:
-                openpyxl.load_workbook(TABEL_LEADERS_FILE, read_only=True, data_only=True).close()
+                openpyxl.load_workbook(leaders_path, read_only=True, data_only=True).close()
             except Exception as exc:
                 errors.append({
                     'stage': 'leaders_file',
@@ -559,7 +594,8 @@ def get_tabel_leaders_data(use_network=True):
         'Непроизводственные отделы'
     ]
     try:
-        current_mtime = os.path.getmtime(TABEL_LEADERS_FILE) if os.path.exists(TABEL_LEADERS_FILE) else 0
+        leaders_path = normalize_tabel_path(TABEL_LEADERS_FILE)
+        current_mtime = os.path.getmtime(leaders_path) if tabel_path_exists(leaders_path) else 0
     except Exception:
         current_mtime = 0
     if TABEL_LEADERS_CACHE and current_mtime == TABEL_LEADERS_MTIME:
@@ -571,10 +607,11 @@ def get_tabel_leaders_data(use_network=True):
     if not use_network:
         return data if not TABEL_LEADERS_CACHE else TABEL_LEADERS_CACHE
     with _tabel_unc_connection():
-        if not os.path.exists(TABEL_LEADERS_FILE):
+        leaders_path = normalize_tabel_path(TABEL_LEADERS_FILE)
+        if not tabel_path_exists(leaders_path):
             return data
         try:
-            workbook = openpyxl.load_workbook(TABEL_LEADERS_FILE, data_only=True)
+            workbook = openpyxl.load_workbook(leaders_path, data_only=True)
             sheet = workbook.active
             current_category = None
             for row in sheet.iter_rows(values_only=True):
@@ -1498,6 +1535,7 @@ def tabel_meta():
             yy = str(year)[2:]
             mm = f'{month_index:02d}'
             payload.append({'key': f'{yy}_{mm}', 'label': f'{mm}.{year}'})
+    path_status = tabel_path_status(TABEL_BASE_DIR, TABEL_LEADERS_FILE)
     return jsonify({
         'periods': payload,
         'current_period': current_period,
@@ -1509,6 +1547,11 @@ def tabel_meta():
             'base_dir_available': source_available,
             'leaders_file_available': leaders_source_available,
             'indexed_employees': index_summary.get('unique_employees', 0),
+            'platform': path_status['platform'],
+            'base_dir_exists': path_status['base_dir_exists'],
+            'leaders_file_exists': path_status['leaders_file_exists'],
+            'setup_hint': path_status['setup_hint'],
+            'last_smb': dict(TABEL_LAST_SMB_CONNECT) if TABEL_LAST_SMB_CONNECT else None,
         }
     })
 
