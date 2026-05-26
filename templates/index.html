@@ -108,18 +108,6 @@
             align-items: center;
             gap: 8px;
         }
-        .nbrb-date-row {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-        .nbrb-date-row label {
-            font-size: 11px;
-            font-weight: 600;
-            color: #6b81a2;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
         .nbrb-date-row input[type="date"] {
             width: 100%;
             border: 1px solid var(--border);
@@ -181,19 +169,6 @@
         }
         .nbrb-rates-status.is-error {
             color: #b42318;
-        }
-        .nbrb-rates-foot {
-            margin-top: 6px;
-            font-size: 10px;
-            color: #8aa1bf;
-            flex-shrink: 0;
-        }
-        .nbrb-rates-foot a {
-            color: #2a65c0;
-            text-decoration: none;
-        }
-        .nbrb-rates-foot a:hover {
-            text-decoration: underline;
         }
 
         #resourcesGrid {
@@ -656,11 +631,10 @@
             <div class="nbrb-rates-header">
                 <div class="nbrb-rates-title"><i data-lucide="landmark" size="14"></i> Курсы НБ РБ</div>
                 <div class="nbrb-date-row">
-                    <label for="nbrbDateInput">Дата</label>
-                    <input type="date" id="nbrbDateInput" max="">
+                    <input type="date" id="nbrbDateInput" max="" aria-label="Дата курса">
                 </div>
             </div>
-            <div id="nbrbRatesStatus" class="nbrb-rates-status">Загрузка…</div>
+            <div id="nbrbRatesStatus" class="nbrb-rates-status" hidden></div>
             <div class="nbrb-rates-table-wrap">
                 <table class="nbrb-rates-table" id="nbrbRatesTable" hidden>
                     <thead>
@@ -671,9 +645,6 @@
                     </thead>
                     <tbody id="nbrbRatesBody"></tbody>
                 </table>
-            </div>
-            <div class="nbrb-rates-foot">
-                <a href="https://www.nbrb.by" target="_blank" rel="noopener">НБ РБ</a>
             </div>
         </aside>
         <div id="resourcesGrid"></div>
@@ -1205,6 +1176,7 @@
         if (!dateInput || !statusEl || !bodyEl) return;
         const dateVal = dateInput.value || nbrbTodayIso();
         statusEl.classList.remove('is-error');
+        statusEl.hidden = false;
         statusEl.textContent = 'Загрузка…';
         if (tableEl) tableEl.hidden = true;
         try {
@@ -1212,27 +1184,26 @@
             const data = await r.json();
             if (!r.ok || !data.success) {
                 statusEl.classList.add('is-error');
+                statusEl.hidden = false;
                 statusEl.textContent = data.error || 'Не удалось загрузить курсы';
                 return;
             }
             if (!data.rates || !data.rates.length) {
+                statusEl.hidden = false;
                 statusEl.textContent = `Нет данных на ${formatNbrbDateRu(data.date)}`;
                 return;
             }
-            statusEl.textContent = `На ${formatNbrbDateRu(data.date)}`;
-            bodyEl.innerHTML = data.rates.map((row) => {
-                const perUnit = row.scale > 1
-                    ? `<div class="nbrb-value">${escapeHtml(row.rate_display)}</div><div style="font-size:10px;color:#8aa1bf;font-weight:500;">${row.rate_per_unit} / 1</div>`
-                    : `<div class="nbrb-value">${escapeHtml(row.rate_display)}</div>`;
-                return `<tr>
+            statusEl.hidden = true;
+            statusEl.textContent = '';
+            bodyEl.innerHTML = data.rates.map((row) => `<tr>
                     <td><span class="nbrb-code">${escapeHtml(row.code)}</span><span class="nbrb-name">${escapeHtml(row.name)}</span></td>
-                    <td>${perUnit}</td>
-                </tr>`;
-            }).join('');
+                    <td><div class="nbrb-value">${escapeHtml(row.rate_display)}</div></td>
+                </tr>`).join('');
             if (tableEl) tableEl.hidden = false;
             renderIcons();
         } catch (e) {
             statusEl.classList.add('is-error');
+            statusEl.hidden = false;
             statusEl.textContent = 'Ошибка связи с сервером';
         }
     }
