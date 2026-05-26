@@ -8,6 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/portal-responsive.css') }}">
     <style>
         :root {
             --primary: #1c4f9c;
@@ -20,7 +21,7 @@
         }
 
         body {
-            background-color: var(--bg);
+            background-color: #081a48;
             background-image:
                 radial-gradient(circle at 50% 42%, rgba(130, 230, 255, 0.18) 0%, rgba(130, 230, 255, 0) 48%),
                 linear-gradient(180deg, rgba(8, 26, 72, 0.56) 0%, rgba(8, 26, 72, 0.66) 100%),
@@ -47,24 +48,165 @@
         }
         .logo { text-decoration: none; display: flex; align-items: center; justify-content: flex-start; }
         .logo img {
-            height: 40px;
             width: auto;
+            max-width: 100%;
+            max-height: 40px;
+            height: auto;
             display: block;
+            object-fit: contain;
+            object-position: left center;
         }
 
         /* Categorized Grid - Vertical Layout (Best for Production) */
-        .main-container { margin: 0 auto; padding: 26px 0 34px; }
+        body { overflow-x: hidden; }
+        .main-container {
+            margin: 0 auto;
+            padding: 26px 0 34px;
+            position: relative;
+            width: 100%;
+        }
+
+        .portal-body {
+            display: grid;
+            grid-template-columns: 178px minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        /* Курсы НБ РБ */
+        .nbrb-rates-panel {
+            display: flex;
+            flex-direction: column;
+            position: sticky;
+            top: 78px;
+            width: 100%;
+            max-height: calc(100vh - 92px);
+            overflow: hidden;
+            padding: 12px 12px 12px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid rgba(205, 220, 243, 0.88);
+            backdrop-filter: blur(3px);
+            box-shadow: 0 8px 20px rgba(17, 46, 90, 0.08);
+        }
+        .nbrb-rates-header {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #dfe8f5;
+            flex-shrink: 0;
+        }
+        .nbrb-rates-title {
+            font-weight: 700;
+            font-size: 13px;
+            color: #5a7090;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nbrb-date-row {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .nbrb-date-row label {
+            font-size: 11px;
+            font-weight: 600;
+            color: #6b81a2;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .nbrb-date-row input[type="date"] {
+            width: 100%;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 8px;
+            font-size: 12px;
+            color: var(--text);
+            background: #fff;
+        }
+        .nbrb-rates-table-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+        }
+        .nbrb-rates-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .nbrb-rates-table th {
+            text-align: left;
+            font-size: 10px;
+            font-weight: 700;
+            color: #6b81a2;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 0 4px 8px;
+            border-bottom: 1px solid #e8eef7;
+        }
+        .nbrb-rates-table th:last-child,
+        .nbrb-rates-table td:last-child {
+            text-align: right;
+        }
+        .nbrb-rates-table td {
+            padding: 6px 2px;
+            border-bottom: 1px solid #eef3fa;
+            vertical-align: middle;
+        }
+        .nbrb-rates-table tr:last-child td {
+            border-bottom: none;
+        }
+        .nbrb-code {
+            font-weight: 700;
+            color: #1c4f9c;
+            white-space: nowrap;
+        }
+        .nbrb-name {
+            display: none;
+        }
+        .nbrb-value {
+            font-weight: 600;
+            color: #1c2f4b;
+            white-space: nowrap;
+        }
+        .nbrb-rates-status {
+            font-size: 12px;
+            color: #6b81a2;
+            padding: 8px 0;
+        }
+        .nbrb-rates-status.is-error {
+            color: #b42318;
+        }
+        .nbrb-rates-foot {
+            margin-top: 6px;
+            font-size: 10px;
+            color: #8aa1bf;
+            flex-shrink: 0;
+        }
+        .nbrb-rates-foot a {
+            color: #2a65c0;
+            text-decoration: none;
+        }
+        .nbrb-rates-foot a:hover {
+            text-decoration: underline;
+        }
 
         #resourcesGrid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 420px));
-            gap: 18px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
             align-items: start;
-            justify-content: start;
+            min-width: 0;
         }
+
         .category-group {
             margin-bottom: 0;
-            padding: 16px 18px 18px;
+            padding: 12px 12px 14px;
             border-radius: 14px;
             background: rgba(255, 255, 255, 0.72);
             border: 1px solid rgba(205, 220, 243, 0.88);
@@ -75,20 +217,20 @@
             min-height: 100%;
         }
         .category-header {
-            font-weight: 700; font-size: 13px; color: #5a7090;
+            font-weight: 700; font-size: 12px; color: #5a7090;
             text-transform: uppercase; letter-spacing: 0.05em;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
             display: flex;
             flex-direction: row;
             align-items: center;
-            gap: 10px;
-            border-bottom: 1px solid #dfe8f5; padding-bottom: 10px;
+            gap: 8px;
+            border-bottom: 1px solid #dfe8f5; padding-bottom: 8px;
         }
 
         .resource-grid {
             display: grid;
             grid-template-columns: 1fr;
-            gap: 14px;
+            gap: 10px;
         }
 
         /* Production Resource Card */
@@ -96,8 +238,8 @@
             position: relative;
             background: #ffffff;
             border: 1px solid var(--border);
-            border-radius: 11px;
-            padding: 16px;
+            border-radius: 10px;
+            padding: 11px 12px;
             transition: all 0.2s ease-in-out;
             box-shadow: var(--card-shadow);
             cursor: pointer;
@@ -116,38 +258,105 @@
             text-decoration: none;
             color: inherit;
             display: flex;
-            gap: 16px;
+            gap: 10px;
             align-items: flex-start;
             height: 100%;
         }
 
         .icon-container {
-            width: 44px; height: 44px;
+            width: 36px; height: 36px;
             background: #f4f7fc;
-            border-radius: 10px;
+            border-radius: 8px;
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0; border: 1px solid #dde7f5;
         }
-        .tile-icon { width: 24px; height: 24px; object-fit: contain; }
+        .tile-icon { width: 20px; height: 20px; object-fit: contain; }
 
         .card-body { flex-grow: 1; min-width: 0; }
         .card-title {
             font-weight: 600;
-            font-size: 15px;
-            margin: 0 0 4px 0;
+            font-size: 13px;
+            margin: 0 0 3px 0;
             color: var(--text);
             white-space: normal;
             overflow-wrap: anywhere;
             word-break: break-word;
         }
         .card-desc {
-            font-size: 13px;
+            font-size: 11px;
             color: var(--muted-text);
-            line-height: 1.5;
+            line-height: 1.35;
             margin: 0;
             white-space: normal;
             overflow-wrap: anywhere;
             word-break: break-word;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Планшет: курсы — такой же блок в сетке с разделами (2 колонки) */
+        @media (max-width: 1199px) {
+            .portal-body {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                align-items: start;
+            }
+            #resourcesGrid {
+                display: contents;
+            }
+            .nbrb-rates-panel {
+                position: static;
+                max-height: none;
+            }
+        }
+
+        /* Узкий планшет / большой телефон */
+        @media (max-width: 767px) {
+            .main-container {
+                padding: 16px 0 28px;
+            }
+            .search-container {
+                max-width: none;
+                margin-bottom: 16px;
+                padding: 0 14px 0 16px;
+            }
+            .search-bar {
+                padding: 11px 0;
+                font-size: 16px;
+            }
+            .portal-body {
+                grid-template-columns: 1fr;
+            }
+            .category-group {
+                padding: 12px;
+            }
+            .resource-card {
+                padding: 12px 14px;
+            }
+            .card-title {
+                font-size: 14px;
+            }
+            .card-desc {
+                font-size: 12px;
+                -webkit-line-clamp: 3;
+            }
+            .group-checklist {
+                grid-template-columns: 1fr;
+            }
+            .modal-body,
+            .modal-header {
+                padding: 16px;
+            }
+        }
+
+        /* Телефон */
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 8px 0;
+            }
         }
 
         /* Admin Controls - Discreet */
@@ -247,11 +456,6 @@
             background: var(--primary-soft);
             border-color: var(--primary-soft);
             color: #fff;
-        }
-        .topbar-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
         .topbar-user {
             font-size: 15px;
@@ -413,31 +617,66 @@
 
     </style>
 </head>
-<body class="{{ 'is-admin' if can_manage_resources else '' }}">
+<body class="portal-bg-fixed {{ 'is-admin' if can_manage_resources else '' }}">
 
 <nav class="navbar">
-    <div class="container d-flex justify-content-between align-items-center">
+    <div class="container portal-navbar-inner">
         <a href="/" class="logo"><img src="{{ url_for('project_logo') }}" alt="Логотип РУП Белнипиэнергопром"></a>
         <div class="topbar-actions">
-            <span class="topbar-user fw-medium text-muted">{{ user }}</span>
+            <span class="topbar-user fw-medium text-muted d-none d-md-inline">{{ user }}</span>
             {% if is_admin %}
-                <a href="/manage" class="btn btn-outline-secondary btn-sm topbar-btn">Администрирование</a>
-                <a href="/manage/categories" class="btn btn-outline-secondary btn-sm topbar-btn">Разделы</a>
+                <a href="/manage" class="btn btn-outline-secondary btn-sm topbar-btn">
+                    <span class="d-none d-xl-inline">Администрирование</span>
+                    <span class="d-inline d-xl-none">Админ</span>
+                </a>
+                <a href="/manage/categories" class="btn btn-outline-secondary btn-sm topbar-btn">
+                    <span class="d-none d-sm-inline">Разделы</span>
+                    <span class="d-inline d-sm-none">Разд.</span>
+                </a>
             {% endif %}
             {% if can_manage_resources %}
-                <button class="btn btn-primary btn-sm topbar-btn" data-bs-toggle="modal" data-bs-target="#addModal">+ Добавить ресурс</button>
+                <button class="btn btn-primary btn-sm topbar-btn" data-bs-toggle="modal" data-bs-target="#addModal">
+                    <span class="d-none d-lg-inline">+ Добавить ресурс</span>
+                    <span class="d-none d-sm-inline d-lg-none">+ Ресурс</span>
+                    <span class="d-inline d-sm-none">+</span>
+                </button>
             {% endif %}
-            <a href="/logout" class="btn btn-light btn-sm topbar-icon-btn"><i data-lucide="log-out" size="16"></i></a>
+            <a href="/logout" class="btn btn-light btn-sm topbar-icon-btn" title="Выход"><i data-lucide="log-out" size="16"></i></a>
         </div>
     </div>
 </nav>
 
-<div class="main-container container">
+<div class="container main-container">
     <div class="search-container">
-            <span class="search-icon-wrap" aria-hidden="true"><i data-lucide="search" size="18"></i></span>
-            <input type="text" id="searchInput" class="search-bar" placeholder="Поиск сервисов и систем...">
+        <span class="search-icon-wrap" aria-hidden="true"><i data-lucide="search" size="18"></i></span>
+        <input type="text" id="searchInput" class="search-bar" placeholder="Поиск сервисов и систем...">
     </div>
-    <div id="resourcesGrid">
+    <div class="portal-body">
+        <aside class="nbrb-rates-panel" aria-label="Курсы валют НБ РБ">
+            <div class="nbrb-rates-header">
+                <div class="nbrb-rates-title"><i data-lucide="landmark" size="14"></i> Курсы НБ РБ</div>
+                <div class="nbrb-date-row">
+                    <label for="nbrbDateInput">Дата</label>
+                    <input type="date" id="nbrbDateInput" max="">
+                </div>
+            </div>
+            <div id="nbrbRatesStatus" class="nbrb-rates-status">Загрузка…</div>
+            <div class="nbrb-rates-table-wrap">
+                <table class="nbrb-rates-table" id="nbrbRatesTable" hidden>
+                    <thead>
+                        <tr>
+                            <th>Валюта</th>
+                            <th>BYN</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nbrbRatesBody"></tbody>
+                </table>
+            </div>
+            <div class="nbrb-rates-foot">
+                <a href="https://www.nbrb.by" target="_blank" rel="noopener">НБ РБ</a>
+            </div>
+        </aside>
+        <div id="resourcesGrid"></div>
     </div>
 </div>
 
@@ -546,7 +785,8 @@
             clipboard: '<rect x="8" y="2" width="8" height="4" rx="1"></rect><path d="M9 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-3"></path><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line>',
             dumbbell: '<path d="M14.4 14.4 9.6 9.6"></path><path d="M18 4l2 2"></path><path d="M2 20l2 2"></path><path d="M20 2l2 2"></path><path d="M4 18l2 2"></path><path d="M15.5 8.5l3-3"></path><path d="M8.5 15.5l-3 3"></path><path d="M12 12l-1 1"></path>',
             book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>',
-            truck: '<rect x="1" y="3" width="15" height="13" rx="2"></rect><path d="M16 8h4l3 3v5h-7z"></path><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle>'
+            truck: '<rect x="1" y="3" width="15" height="13" rx="2"></rect><path d="M16 8h4l3 3v5h-7z"></path><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle>',
+            landmark: '<line x1="3" y1="22" x2="21" y2="22"></line><line x1="6" y1="18" x2="6" y2="11"></line><line x1="10" y1="18" x2="10" y2="11"></line><line x1="14" y1="18" x2="14" y2="11"></line><line x1="18" y1="18" x2="18" y2="11"></line><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>'
         };
         document.querySelectorAll('[data-lucide]').forEach((el) => {
             const name = el.getAttribute('data-lucide');
@@ -845,7 +1085,7 @@
         };
         async function saveOrder() {
             const order = [];
-            document.querySelectorAll('.category-group').forEach(s => {
+            document.querySelectorAll('#resourcesGrid .category-group').forEach(s => {
                 const cat = s.querySelector('.category-header').innerText.trim();
                 s.querySelectorAll('[data-id]').forEach(i => order.push({ id: parseInt(i.dataset.id), category: cat }));
             });
@@ -937,8 +1177,79 @@
         }
     });
     document.getElementById('searchInput').oninput = loadResources;
+
+    function escapeHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function nbrbTodayIso() {
+        const d = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+
+    function formatNbrbDateRu(iso) {
+        if (!iso || !iso.includes('-')) return iso;
+        const [y, m, d] = iso.split('-');
+        return `${d}.${m}.${y}`;
+    }
+
+    async function loadNbrbRates() {
+        const dateInput = document.getElementById('nbrbDateInput');
+        const statusEl = document.getElementById('nbrbRatesStatus');
+        const tableEl = document.getElementById('nbrbRatesTable');
+        const bodyEl = document.getElementById('nbrbRatesBody');
+        if (!dateInput || !statusEl || !bodyEl) return;
+        const dateVal = dateInput.value || nbrbTodayIso();
+        statusEl.classList.remove('is-error');
+        statusEl.textContent = 'Загрузка…';
+        if (tableEl) tableEl.hidden = true;
+        try {
+            const r = await fetch(`/api/nbrb-rates?date=${encodeURIComponent(dateVal)}`);
+            const data = await r.json();
+            if (!r.ok || !data.success) {
+                statusEl.classList.add('is-error');
+                statusEl.textContent = data.error || 'Не удалось загрузить курсы';
+                return;
+            }
+            if (!data.rates || !data.rates.length) {
+                statusEl.textContent = `Нет данных на ${formatNbrbDateRu(data.date)}`;
+                return;
+            }
+            statusEl.textContent = `На ${formatNbrbDateRu(data.date)}`;
+            bodyEl.innerHTML = data.rates.map((row) => {
+                const perUnit = row.scale > 1
+                    ? `<div class="nbrb-value">${escapeHtml(row.rate_display)}</div><div style="font-size:10px;color:#8aa1bf;font-weight:500;">${row.rate_per_unit} / 1</div>`
+                    : `<div class="nbrb-value">${escapeHtml(row.rate_display)}</div>`;
+                return `<tr>
+                    <td><span class="nbrb-code">${escapeHtml(row.code)}</span><span class="nbrb-name">${escapeHtml(row.name)}</span></td>
+                    <td>${perUnit}</td>
+                </tr>`;
+            }).join('');
+            if (tableEl) tableEl.hidden = false;
+            renderIcons();
+        } catch (e) {
+            statusEl.classList.add('is-error');
+            statusEl.textContent = 'Ошибка связи с сервером';
+        }
+    }
+
+    function initNbrbRatesWidget() {
+        const dateInput = document.getElementById('nbrbDateInput');
+        if (!dateInput) return;
+        const today = nbrbTodayIso();
+        dateInput.max = today;
+        if (!dateInput.value) dateInput.value = today;
+        dateInput.addEventListener('change', loadNbrbRates);
+        loadNbrbRates();
+    }
+
     window.onload = async () => {
         initConfirmModal();
+        initNbrbRatesWidget();
         await loadGroups();
         await loadCategories();
         loadResources();

@@ -1,0 +1,286 @@
+/* Общие адаптивные стили портала */
+html {
+    -webkit-text-size-adjust: 100%;
+    min-height: 100%;
+    /* тот же тон, что тёмный градиент — без светлой полосы внизу */
+    background-color: #081a48;
+}
+
+body.portal-bg-fixed {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background-color: #081a48;
+    background-attachment: scroll !important;
+}
+
+@media (min-width: 992px) {
+    body.portal-bg-fixed {
+        background-attachment: fixed;
+    }
+}
+
+/* Ширина и боковые отступы — как у .container (Bootstrap), класс container в разметке */
+.portal-navbar-inner {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(4px, 1.2vw, 10px);
+    flex-wrap: nowrap !important;
+    container-type: inline-size;
+    container-name: portal-topbar;
+    min-width: 0;
+}
+
+.portal-navbar-inner.topbar {
+    flex-wrap: nowrap !important;
+}
+
+/* Единая шапка на всех страницах портала */
+.navbar {
+    padding: 12px 0;
+}
+
+/* Логотип сжимается при нехватке места, кнопки — нет */
+.portal-navbar-inner .logo {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+}
+
+.portal-navbar-inner .logo img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 40px;
+    object-fit: contain;
+    object-position: left center;
+}
+
+.topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 1vw, 8px);
+    flex-wrap: nowrap !important;
+    justify-content: flex-end;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-shrink: 1;
+}
+
+.topbar-actions .btn,
+.topbar-actions .topbar-user {
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.portal-page {
+    width: 100%;
+    max-width: calc(100vw - 28px);
+    margin-left: auto;
+    margin-right: auto;
+}
+
+@media (min-width: 1600px) {
+    .portal-page {
+        max-width: min(1780px, calc(100vw - 40px));
+    }
+}
+
+.portal-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Уменьшение лого по ширине шапки (когда много кнопок) */
+@container portal-topbar (max-width: 720px) {
+    .portal-navbar-inner .logo img {
+        max-height: 34px;
+    }
+}
+
+@container portal-topbar (max-width: 600px) {
+    .portal-navbar-inner .logo img {
+        max-height: 30px;
+    }
+}
+
+@container portal-topbar (max-width: 500px) {
+    .portal-navbar-inner .logo img {
+        max-height: 26px;
+    }
+}
+
+@container portal-topbar (max-width: 420px) {
+    .portal-navbar-inner .logo img {
+        max-height: 22px;
+    }
+}
+
+/* Планшет: одна строка — уменьшаем лого и кнопки */
+@media (max-width: 1199px) {
+    .portal-navbar-inner .logo {
+        flex: 0 1 auto;
+        max-width: min(40vw, 260px);
+    }
+
+    .portal-navbar-inner .logo img {
+        max-height: 32px;
+    }
+
+    .topbar-actions {
+        gap: 4px;
+    }
+
+    .navbar .topbar-user {
+        font-size: 12px !important;
+        margin-right: 2px !important;
+        max-width: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .navbar .topbar-btn {
+        height: 32px !important;
+        min-height: 32px;
+        padding: 0 8px !important;
+        font-size: 11px !important;
+        line-height: 1;
+        white-space: nowrap;
+        border-radius: 8px !important;
+    }
+
+    .navbar .topbar-icon-btn {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        flex-shrink: 0;
+        border-radius: 50% !important;
+        margin-left: 0 !important;
+    }
+
+    .portal-navbar-inner.topbar .topbar-left,
+    .portal-navbar-inner.topbar .topbar-spacer {
+        min-width: 0;
+        flex-shrink: 1;
+    }
+
+    .portal-navbar-inner.topbar .brand-title {
+        flex: 1 1 auto;
+        min-width: 0;
+        order: 0;
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+@media (max-width: 991px) {
+    .portal-navbar-inner .logo {
+        max-width: min(36vw, 200px);
+    }
+
+    .portal-navbar-inner .logo img {
+        max-height: 28px;
+    }
+
+    .navbar .topbar-btn {
+        height: 30px !important;
+        min-height: 30px;
+        padding: 0 6px !important;
+        font-size: 10px !important;
+    }
+
+    .navbar .topbar-icon-btn {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+    }
+}
+
+@media (max-width: 767px) {
+    .navbar {
+        padding: 8px 0;
+    }
+
+    .navbar .topbar-btn {
+        height: 34px !important;
+        min-height: 34px;
+        padding: 0 9px !important;
+        font-size: 11px !important;
+        line-height: 1;
+        white-space: nowrap;
+        border-radius: 8px !important;
+    }
+
+    .navbar .topbar-icon-btn {
+        width: 34px !important;
+        height: 34px !important;
+        min-width: 34px !important;
+        flex-shrink: 0;
+        border-radius: 50% !important;
+    }
+}
+
+@media (max-width: 420px) {
+    .navbar .topbar-btn {
+        height: 30px !important;
+        min-height: 30px;
+        padding: 0 6px !important;
+        font-size: 10px !important;
+    }
+
+    .navbar .topbar-icon-btn {
+        width: 30px !important;
+        height: 30px !important;
+        min-width: 30px !important;
+    }
+}
+
+/* Fallback без container queries */
+@supports not (container-type: inline-size) {
+    @media (max-width: 1199px) {
+        .portal-navbar-inner .logo img {
+            max-height: 32px;
+        }
+    }
+    @media (max-width: 991px) {
+        .portal-navbar-inner .logo img {
+            max-height: 28px;
+        }
+    }
+    @media (max-width: 720px) {
+        .portal-navbar-inner .logo img {
+            max-height: 26px;
+        }
+    }
+    @media (max-width: 600px) {
+        .portal-navbar-inner .logo img {
+            max-height: 24px;
+        }
+    }
+    @media (max-width: 420px) {
+        .portal-navbar-inner .logo img {
+            max-height: 22px;
+        }
+    }
+}
+
+@media (hover: none) {
+    .resource-card:hover {
+        transform: none;
+    }
+
+    body.is-admin .admin-hud {
+        opacity: 1;
+    }
+}

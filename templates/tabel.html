@@ -78,6 +78,50 @@
         .day.today { border: 2px solid var(--accent) !important; box-shadow: 0 0 10px rgba(49,130,206,0.2); }
         .day-n { font-size: 18px; font-weight: 900; }
         .day-l { font-size: 9px; font-weight: 700; text-transform: uppercase; margin-top: 2px; }
+
+        @media (max-width: 1280px) {
+            .layout { grid-template-columns: 220px 1fr 220px; }
+        }
+        @media (max-width: 1024px) {
+            body { height: auto; min-height: 100vh; overflow: auto; }
+            .layout {
+                grid-template-columns: 1fr 1fr;
+                grid-template-rows: minmax(180px, 34vh) minmax(180px, 34vh) 1fr;
+                height: auto;
+                min-height: calc(100vh - 20px);
+            }
+            .layout > .panel:first-child { grid-column: 1; grid-row: 1; }
+            #tabelLeaderPanelRight { grid-column: 2; grid-row: 1; }
+            .layout > .main-card {
+                grid-column: 1 / -1;
+                grid-row: 2 / span 2;
+                min-height: 55vh;
+            }
+        }
+        @media (max-width: 720px) {
+            .layout {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto;
+            }
+            .layout > .panel:first-child,
+            #tabelLeaderPanelRight {
+                max-height: 32vh;
+            }
+            .layout > .main-card {
+                grid-column: 1;
+                grid-row: auto;
+                min-height: 60vh;
+            }
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .control-group,
+            .control-group.small { flex: none; width: 100%; }
+            .calendar-grid { gap: 4px; }
+            .day { min-height: 42px; }
+            .day-n { font-size: 15px; }
+        }
     </style>
 </head>
 <body>

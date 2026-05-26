@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/portal-responsive.css') }}">
     <style>
         :root {
             --primary: #1c4f9c;
@@ -23,7 +24,7 @@
             --card-shadow: 0 8px 22px rgba(21, 45, 84, 0.1);
         }
         body {
-            background-color: var(--bg);
+            background-color: #081a48;
             background-image:
                 radial-gradient(circle at 50% 42%, rgba(130, 230, 255, 0.18) 0%, rgba(130, 230, 255, 0) 48%),
                 linear-gradient(180deg, rgba(8, 26, 72, 0.56) 0%, rgba(8, 26, 72, 0.66) 100%),
@@ -450,9 +451,19 @@
             color: #f3f8ff;
             font-size: 12px;
             font-weight: 500;
-            white-space: normal;
-            overflow-wrap: anywhere;
-            word-break: break-word;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+        @media (min-width: 900px) {
+            .fc .fc-timegrid-event .booking-event-line {
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                overflow-wrap: break-word;
+            }
         }
         .fc .fc-timegrid-event .booking-event-line strong {
             color: #ffffff;
@@ -495,14 +506,20 @@
         }
     </style>
 </head>
-<body>
+<body class="portal-bg-fixed">
 <nav class="navbar">
-    <div class="container d-flex justify-content-between align-items-center">
+    <div class="container portal-navbar-inner">
         <a href="/" class="logo"><img src="{{ url_for('project_logo') }}" alt="Логотип РУП Белнипиэнергопром"></a>
         <div class="topbar-actions">
-            <span class="topbar-user fw-medium text-muted">{{ user_display }}</span>
-            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">К ресурсам</a>
-            <a href="/logout" class="btn btn-light btn-sm topbar-btn">Выход</a>
+            <span class="topbar-user fw-medium text-muted d-none d-md-inline">{{ user_display }}</span>
+            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">К ресурсам</span>
+                <span class="d-inline d-sm-none">← Главная</span>
+            </a>
+            <a href="/logout" class="btn btn-light btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">Выход</span>
+                <span class="d-inline d-sm-none">Вых.</span>
+            </a>
         </div>
     </div>
 </nav>

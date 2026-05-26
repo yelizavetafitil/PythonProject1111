@@ -19,8 +19,11 @@ from email.header import Header
 from email import policy
 from urllib.parse import urlparse
 from urllib.parse import urlencode
+from urllib import request as urllib_request
+from urllib.error import URLError, HTTPError
 from datetime import datetime
 from datetime import timedelta
+from datetime import date as date_type
 from zoneinfo import ZoneInfo
 from flask import (
     Flask,
@@ -1305,6 +1308,100 @@ def check_ldap_auth(username, password):
     except Exception as exc:
         app.logger.exception('Unexpected auth error for "%s": %s', username, exc)
         return False, 'Временная ошибка LDAP. Попробуйте позже'
+
+
+NBRB_RATES_API = 'https://api.nbrb.by/exrates/rates'
+NBRB_DISPLAY_CURRENCIES = ('USD', 'EUR', 'RUB', 'PLN', 'CNY', 'UAH')
+_nbrb_rates_cache = {}
+_nbrb_cache_lock = threading.Lock()
+NBRB_CACHE_TTL_SEC = 600
+
+
+def _parse_nbrb_request_date(raw):
+    if not raw:
+        return datetime.now(APP_TZ).date(), None
+    try:
+        return datetime.strptime(raw.strip(), '%Y-%m-%d').date(), None
+    except ValueError:
+        return None, 'Неверный формат даты'
+
+
+def _format_nbrb_rate_display(scale, official):
+    if scale <= 1:
+        text = f'{official:.4f}'.rstrip('0').rstrip('.')
+        return text if text else '0'
+    text = f'{official:.4f}'.rstrip('0').rstrip('.')
+    return f'{text} за {scale}'
+
+
+def _fetch_nbrb_rates(on_date: date_type):
+    cache_key = on_date.isoformat()
+    now_ts = time.time()
+    with _nbrb_cache_lock:
+        cached = _nbrb_rates_cache.get(cache_key)
+        if cached and (now_ts - cached['ts']) < NBRB_CACHE_TTL_SEC:
+            return cached['data'], None
+    url = f'{NBRB_RATES_API}?ondate={cache_key}&periodicity=0'
+    try:
+        req = urllib_request.Request(
+            url,
+            headers={'Accept': 'application/json', 'User-Agent': 'BelnipiPortal/1.0'},
+        )
+        with urllib_request.urlopen(req, timeout=20) as resp:
+            payload = json.loads(resp.read().decode('utf-8'))
+    except HTTPError as exc:
+        return None, f'НБ РБ: HTTP {exc.code}'
+    except URLError as exc:
+        return None, f'НБ РБ недоступен: {exc.reason}'
+    except (TimeoutError, json.JSONDecodeError, OSError, ValueError) as exc:
+        return None, str(exc)
+    if not isinstance(payload, list):
+        return None, 'Неожиданный ответ НБ РБ'
+    by_abbr = {
+        item.get('Cur_Abbreviation'): item
+        for item in payload
+        if isinstance(item, dict) and item.get('Cur_Abbreviation')
+    }
+    rows = []
+    for code in NBRB_DISPLAY_CURRENCIES:
+        item = by_abbr.get(code)
+        if not item:
+            continue
+        scale = int(item.get('Cur_Scale') or 1)
+        official = float(item.get('Cur_OfficialRate') or 0)
+        per_one = official / scale if scale else official
+        rows.append({
+            'code': code,
+            'name': (item.get('Cur_Name') or code).strip(),
+            'scale': scale,
+            'rate': official,
+            'rate_per_unit': round(per_one, 4),
+            'rate_display': _format_nbrb_rate_display(scale, official),
+        })
+    data = {
+        'date': cache_key,
+        'rates': rows,
+        'source_url': 'https://www.nbrb.by',
+    }
+    with _nbrb_cache_lock:
+        _nbrb_rates_cache[cache_key] = {'ts': now_ts, 'data': data}
+    return data, None
+
+
+@app.route('/api/nbrb-rates')
+def nbrb_rates_api():
+    if not session.get('logged_in'):
+        return jsonify(success=False, error='Требуется авторизация'), 403
+    on_date, err = _parse_nbrb_request_date(request.args.get('date'))
+    if err:
+        return jsonify(success=False, error=err), 400
+    today = datetime.now(APP_TZ).date()
+    if on_date > today:
+        return jsonify(success=False, error='Дата не может быть в будущем'), 400
+    data, fetch_err = _fetch_nbrb_rates(on_date)
+    if fetch_err:
+        return jsonify(success=False, error=fetch_err), 502
+    return jsonify(success=True, **data)
 
 
 @app.route('/')

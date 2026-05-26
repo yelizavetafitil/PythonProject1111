@@ -6,6 +6,7 @@
     <title>Телефонный справочник | РУП Белнипиэнергопром</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/portal-responsive.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
@@ -38,7 +39,7 @@
             --variant-btn-active-color: #174788;
         }
         body {
-            background-color: var(--bg);
+            background-color: #081a48;
             background-image:
                 radial-gradient(circle at 50% 42%, rgba(130, 230, 255, 0.18) 0%, rgba(130, 230, 255, 0) 48%),
                 linear-gradient(180deg, rgba(8, 26, 72, 0.56) 0%, rgba(8, 26, 72, 0.66) 100%),
@@ -81,11 +82,15 @@
         .btn-outline-secondary:hover { background: var(--primary); border-color: var(--primary); color: #fff; }
         .btn-light { background: var(--primary); border-color: var(--primary); color: #fff; }
         .btn-light:hover { background: var(--primary-soft); border-color: var(--primary-soft); color: #fff; }
-        .main-container { margin: 0 auto; padding: 26px 0 34px; }
+        .main-container {
+            margin: 0 auto;
+            padding: 20px 0 28px;
+            width: 100%;
+        }
         .directory-layout {
             display: grid;
-            grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
-            gap: 20px;
+            grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+            gap: 16px;
             align-items: start;
         }
         .directory-sidebar {
@@ -167,19 +172,26 @@
             color: #123f7f;
         }
         .dept-link-name {
+            flex: 1 1 auto;
+            min-width: 0;
+            font-weight: 500;
+            line-height: 1.35;
             overflow-wrap: anywhere;
             word-break: break-word;
-            font-weight: 500;
         }
         .dept-link-count {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 24px;
+            flex-shrink: 0;
+            min-width: 28px;
+            height: 22px;
             border-radius: 999px;
-            padding: 1px 7px;
+            padding: 0 8px;
             font-size: 11px;
             font-weight: 700;
+            line-height: 1;
+            white-space: nowrap;
             background: #e2ecfb;
             color: #1d4b8f;
         }
@@ -686,62 +698,171 @@
             border-top: 1px dashed #dce8f8;
             padding-top: 8px;
         }
+        /* Планшет и телефон: навигация сверху, список фамилий снизу */
         @media (max-width: 1200px) {
+            .directory-layout,
+            body[data-variant="showcase"] .directory-layout,
+            body[data-variant="resources"] .directory-layout,
+            body[data-variant="magazine"] .directory-layout,
+            body[data-variant="official"] .directory-layout,
+            body[data-variant="compact"] .directory-layout,
+            body[data-variant="grid"] .directory-layout {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+            .directory-sidebar {
+                position: static;
+                top: auto;
+                max-height: min(42vh, 340px);
+                overflow-y: auto;
+                width: 100%;
+            }
+            .directory-main {
+                min-width: 0;
+                width: 100%;
+            }
+            .sidebar-head {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                margin: -14px -12px 10px;
+                border-top-left-radius: 14px;
+                border-top-right-radius: 14px;
+            }
+            .dept-nav {
+                flex-direction: column;
+            }
+            .dept-link {
+                width: 100%;
+                max-width: none;
+            }
+            .dept-link-name {
+                overflow-wrap: anywhere;
+                word-break: break-word;
+                white-space: normal;
+            }
             .contact-row { grid-template-columns: minmax(220px, 1fr) minmax(160px, 0.8fr) minmax(180px, 0.9fr); }
             .contact-row .contact-dept { display: none; }
             .contact-head .head-dept { display: none; }
-            body[data-variant="showcase"] .contact-item { grid-template-columns: 1fr 1fr; }
-            body[data-variant="showcase"] .contact-dept { display: none; }
-            body[data-variant="resources"] .contact-item { grid-template-columns: 1fr 1fr; }
-            body[data-variant="resources"] .contact-dept { display: none; }
-            body[data-variant="magazine"] .contact-item { grid-template-columns: 1fr 1fr; }
+            body[data-variant="showcase"] .contact-item,
+            body[data-variant="resources"] .contact-item,
+            body[data-variant="magazine"] .contact-item {
+                grid-template-columns: 1fr;
+            }
+            body[data-variant="showcase"] .contact-dept,
+            body[data-variant="resources"] .contact-dept,
             body[data-variant="magazine"] .contact-dept { display: none; }
             body[data-variant="official"] .contact-row { grid-template-columns: 1fr 1fr; }
             body[data-variant="official"] .contact-dept,
             body[data-variant="official"] .head-dept { display: none; }
         }
         @media (max-width: 991px) {
-            .directory-layout { grid-template-columns: 1fr; }
-            .directory-sidebar { position: static; max-height: none; }
-            .sidebar-head {
-                position: static;
-                margin: -14px -12px 12px;
-                border-top-left-radius: 14px;
-                border-top-right-radius: 14px;
-            }
-            .contact-row, .contact-head {
+            .contact-row,
+            .contact-head {
                 grid-template-columns: 1fr;
-                gap: 6px;
+                gap: 8px;
+                align-items: start;
             }
             .contact-head { display: none; }
-            .contact-row { padding: 12px; }
-            body[data-variant="showcase"] .contact-item { grid-template-columns: 1fr; }
-            body[data-variant="showcase"] .contact-item > div { padding-left: 2px; }
-            body[data-variant="showcase"] .toolbar-row { padding: 8px; }
-            body[data-variant="resources"] .contact-item { grid-template-columns: 1fr; }
-            body[data-variant="magazine"] .directory-layout { grid-template-columns: 1fr; gap: 14px; }
-            body[data-variant="magazine"] .contact-item { grid-template-columns: 1fr; }
-            body[data-variant="magazine"] .contacts-list { padding-left: 0; }
-            body[data-variant="magazine"] .contacts-list::before,
-            body[data-variant="magazine"] .contact-item::before { display: none; }
-            body[data-variant="official"] .contact-row { grid-template-columns: 1fr; }
-            body[data-variant="grid"] .contacts-list { grid-template-columns: 1fr; }
+            body:not([data-variant="showcase"]) .contact-row {
+                padding: 12px;
+            }
+            body:not([data-variant="showcase"]) .contact-dept {
+                display: block !important;
+                font-size: 11px;
+                padding-top: 2px;
+                border-top: 1px dashed #e8eef7;
+            }
+            body:not([data-variant="showcase"]) .contact-phones {
+                width: 100%;
+                padding-top: 4px;
+                border-top: 1px dashed #e8eef7;
+            }
+            .phone-link {
+                flex-wrap: wrap;
+            }
+            .search-container {
+                border-radius: 12px;
+                padding: 0 12px 0 14px;
+            }
+            .search-bar {
+                padding: 10px 0;
+                font-size: 14px;
+            }
+            .directory-main {
+                padding: 12px;
+            }
+            body[data-variant="showcase"] .contact-item,
+            body[data-variant="resources"] .contact-item,
+            body[data-variant="magazine"] .contact-item {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            body[data-variant="showcase"] .contact-item .contact-name,
+            body[data-variant="showcase"] .contact-item .contact-pos {
+                overflow-wrap: anywhere;
+                word-break: break-word;
+            }
+            body[data-variant="showcase"] .contact-item::before,
+            body[data-variant="magazine"] .contact-item::before {
+                display: none;
+            }
+            body[data-variant="showcase"] .contact-item > div,
+            body[data-variant="magazine"] .contact-item > div {
+                padding-left: 0;
+            }
+            body[data-variant="showcase"] .contact-item .contact-phones {
+                border-top: none;
+                padding-top: 0;
+            }
+        }
+        @media (max-width: 575px) {
+            .main-container {
+                padding: 12px 0 20px;
+            }
+            .directory-sidebar {
+                max-height: min(38vh, 280px);
+                padding: 10px;
+            }
+            .dept-link {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+            .dept-link-count {
+                min-width: 24px;
+                height: 20px;
+                font-size: 10px;
+            }
+        }
+        @media (min-width: 992px) {
+            body[data-variant="showcase"] .dept-link-name {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
         }
     </style>
 </head>
-<body>
+<body class="portal-bg-fixed phonebook-page">
 <nav class="navbar">
-    <div class="container d-flex justify-content-between align-items-center">
+    <div class="container portal-navbar-inner">
         <a href="/" class="logo"><img src="{{ url_for('project_logo') }}" alt="Логотип компании"></a>
         <div class="topbar-actions">
-            <span class="topbar-user fw-medium text-muted">{{ user }}</span>
-            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">К ресурсам</a>
-            <a href="/logout" class="btn btn-light btn-sm topbar-btn">Выход</a>
+            <span class="topbar-user fw-medium text-muted d-none d-md-inline">{{ user }}</span>
+            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">К ресурсам</span>
+                <span class="d-inline d-sm-none">← Главная</span>
+            </a>
+            <a href="/logout" class="btn btn-light btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">Выход</span>
+                <span class="d-inline d-sm-none">Вых.</span>
+            </a>
         </div>
     </div>
 </nav>
 
-<div class="main-container container">
+<div class="container main-container">
     <div class="directory-layout">
         <aside class="directory-sidebar">
             <div class="sidebar-head">
@@ -777,10 +898,18 @@
                     </div>
                     <div class="contact-dept">{{ c.dept }}</div>
                     <div class="contact-phones">
-                        {% if c.work %}<a href="tel:{{ c.work }}" class="phone-link"><i class="fa-solid fa-briefcase"></i> {{ c.work }}</a>{% endif %}
-                        {% if can_view_private_phones and c.mobile %}<a href="tel:{{ c.mobile }}" class="phone-link"><i class="fa-solid fa-mobile-screen-button"></i> {{ c.mobile }}</a>{% endif %}
-                        {% if can_view_private_phones and c.home %}<a href="tel:{{ c.home }}" class="phone-link home"><i class="fa-solid fa-house"></i> {{ c.home }}</a>{% endif %}
-                        {% if not c.work and not (can_view_private_phones and c.mobile) and not (can_view_private_phones and c.home) %}<span class="text-muted small">—</span>{% endif %}
+                        {% if c.work and (c.work|string|lower) not in ['nan', 'none', ''] %}
+                        <a href="tel:{{ c.work }}" class="phone-link"><i class="fa-solid fa-briefcase"></i> {{ c.work }}</a>
+                        {% endif %}
+                        {% if can_view_private_phones and c.mobile and (c.mobile|string|lower) not in ['nan', 'none', ''] %}
+                        <a href="tel:{{ c.mobile }}" class="phone-link"><i class="fa-solid fa-mobile-screen-button"></i> {{ c.mobile }}</a>
+                        {% endif %}
+                        {% if can_view_private_phones and c.home and (c.home|string|lower) not in ['nan', 'none', ''] %}
+                        <a href="tel:{{ c.home }}" class="phone-link home"><i class="fa-solid fa-house"></i> {{ c.home }}</a>
+                        {% endif %}
+                        {% if not (c.work and (c.work|string|lower) not in ['nan', 'none', '']) and not (can_view_private_phones and c.mobile and (c.mobile|string|lower) not in ['nan', 'none', '']) and not (can_view_private_phones and c.home and (c.home|string|lower) not in ['nan', 'none', '']) %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
                     </div>
                 </div>
                 {% endfor %}
@@ -888,15 +1017,14 @@
         applyFilter(event.target.value);
     }, 120));
 
-    function setVariant(variantName) {
-        const variant = "showcase";
-        document.body.setAttribute("data-variant", variant);
+    function setVariant() {
+        document.body.setAttribute("data-variant", "showcase");
     }
 
     initGroups();
     buildNavigation();
     setActiveNavButton();
-    setVariant("showcase");
+    setVariant();
     applyFilter("");
 </script>
 </body>

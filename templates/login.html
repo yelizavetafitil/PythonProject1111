@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Вход | РУП Белнипиэнергопром</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -13,7 +14,7 @@
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
-            background-attachment: fixed;
+            background-attachment: scroll;
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
             display: flex;
@@ -92,6 +93,12 @@
         .btn-login { background: var(--accent); color: white; font-weight: 700; border-radius: 14px; padding: 14px; width: 100%; border: none; transition: 0.2s; font-size: 16px; }
         .btn-login:hover { background: var(--accent-soft); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(20,64,128,0.28); }
         .btn-login:focus { box-shadow: 0 0 0 3px rgba(20,64,128,0.18); }
+        @media (max-width: 480px) {
+            body { padding: 12px; }
+            .login-card { padding: 28px 22px; border-radius: 22px; }
+            .auth-title { font-size: 18px; }
+            .auth-subtitle { font-size: 13px; }
+        }
     </style>
 </head>
 <body>

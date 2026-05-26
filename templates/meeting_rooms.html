@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/portal-responsive.css') }}">
     <style>
         :root {
             --primary: #1c4f9c;
@@ -23,7 +24,7 @@
             --card-shadow: 0 8px 22px rgba(21, 45, 84, 0.1);
         }
         body {
-            background-color: var(--bg);
+            background-color: #081a48;
             background-image:
                 radial-gradient(circle at 50% 42%, rgba(130, 230, 255, 0.18) 0%, rgba(130, 230, 255, 0) 48%),
                 linear-gradient(180deg, rgba(8, 26, 72, 0.56) 0%, rgba(8, 26, 72, 0.66) 100%),
@@ -88,6 +89,7 @@
         .hero-title { margin: 0; font-size: 20px; font-weight: 700; color: #1e4f95; }
         .hero-subtitle { margin: 6px 0 0; color: #5e7798; font-size: 14px; }
         .panel { padding: 16px; }
+        .panel + .panel { margin-top: 14px; }
         .panel-header {
             display: flex;
             align-items: flex-start;
@@ -366,28 +368,29 @@
         }
         .hint-text {
             margin: 0 0 10px;
+            font-size: 13px;
             color: #6b84a2;
-            font-size: 12px;
         }
         .helper-box {
-            border: 1px solid #d9e5f6;
-            border-radius: 12px;
-            background: linear-gradient(180deg, #fafcff 0%, #f4f8ff 100%);
-            padding: 12px;
-            display: grid;
-            gap: 10px;
+            border: 1px dashed #d2def0;
+            border-radius: 10px;
+            background: rgba(244, 248, 255, 0.75);
+            padding: 10px 12px;
         }
         .helper-title {
-            margin: 0;
-            font-size: 13px;
+            margin: 0 0 6px;
+            font-size: 12px;
             font-weight: 700;
-            color: #315788;
+            text-transform: uppercase;
+            color: #4f6f96;
+            letter-spacing: 0.03em;
         }
         .helper-list {
             margin: 0;
             padding-left: 18px;
-            color: #607998;
-            font-size: 13px;
+            color: #5e7798;
+            font-size: 12px;
+            line-height: 1.45;
         }
         .room-panel { height: fit-content; }
         .room-toolbar {
@@ -472,47 +475,44 @@
             line-height: 1;
             font-size: 12px;
         }
-        .schedule-search {
+        .schedule-search-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: #fff;
+            padding: 0 12px;
             width: 100%;
-            margin-left: 0;
-            border: none;
-            background: transparent;
-            padding: 0;
+        }
+        .schedule-search-wrap:focus-within {
+            border-color: #94b4e4;
+            box-shadow: 0 0 0 3px rgba(98, 141, 209, 0.14);
+        }
+        .schedule-search-icon {
+            flex-shrink: 0;
+            color: #8aa1bf;
+            line-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .schedule-search-icon svg {
+            width: 18px;
+            height: 18px;
+            display: block;
+        }
+        .schedule-search {
+            border: none !important;
+            box-shadow: none !important;
+            background: transparent !important;
+            width: 100%;
+            padding: 8px 0;
             font-size: 14px;
-            color: var(--text);
-            box-shadow: none;
             min-width: 0;
         }
         .schedule-search:focus {
             outline: none;
-            box-shadow: none;
-        }
-        .schedule-search-wrap {
-            width: 100%;
-            border: 1px solid var(--border);
-            border-radius: 999px;
-            background: #fff;
-            padding: 8px 14px 8px 12px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            box-shadow: 0 6px 14px rgba(17, 46, 90, 0.1);
-        }
-        .schedule-search-wrap:focus-within {
-            border-color: #94b4e4;
-            box-shadow: 0 0 0 3px rgba(98, 141, 209, 0.14), 0 10px 20px rgba(17, 46, 90, 0.12);
-        }
-        .schedule-search-icon {
-            color: #8aa1bf;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 0;
-            flex-shrink: 0;
-        }
-        .schedule-search-icon svg {
-            width: 16px;
-            height: 16px;
         }
         .table-wrap {
             background: transparent;
@@ -573,6 +573,26 @@
             text-transform: uppercase;
             letter-spacing: 0.03em;
         }
+        .planner-mode-btn.btn-outline-secondary {
+            background: #fff;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .planner-mode-btn.btn-outline-secondary:hover {
+            background: #f2f7ff;
+            color: var(--primary);
+            border-color: var(--primary);
+        }
+        .planner-mode-btn.btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #fff;
+        }
+        .planner-mode-btn.btn-primary:hover {
+            background: var(--primary-soft);
+            border-color: var(--primary-soft);
+            color: #fff;
+        }
         .planner-calendar {
             min-height: 520px;
         }
@@ -606,6 +626,10 @@
             font-size: 13px;
             font-weight: 700;
             text-transform: capitalize;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 2px 4px;
         }
         .fc .fc-day-today {
             background: rgba(36, 92, 179, 0.06) !important;
@@ -675,9 +699,23 @@
             color: #f3f8ff;
             font-weight: 500;
             white-space: normal;
-            overflow-wrap: anywhere;
-            word-break: break-word;
+            overflow-wrap: break-word;
+            word-break: normal;
             hyphens: auto;
+        }
+        .fc .fc-daygrid-event .booking-event-content {
+            min-width: 0;
+        }
+        /* Узкий экран: одна строка с «…», без посимвольного переноса */
+        @media (max-width: 899px) {
+            .fc .fc-daygrid-event .booking-event-line {
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                overflow-wrap: normal;
+                word-break: normal;
+                hyphens: none;
+            }
         }
         .fc .fc-event .booking-event-line strong {
             color: #ffffff;
@@ -751,6 +789,14 @@
         }
         .fc .fc-timegrid-event .booking-event-line {
             font-size: 13px;
+        }
+        @media (min-width: 900px) {
+            .fc .fc-timegrid-event .booking-event-line {
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                overflow-wrap: break-word;
+            }
         }
         .fc .fc-timegrid-event .booking-event-hint {
             font-size: 11px;
@@ -929,6 +975,15 @@
         @media (max-width: 1100px) {
             .booking-layout { grid-template-columns: 1fr; }
         }
+        @media (max-width: 768px) {
+            .fc-col-header-cell-cushion {
+                font-size: 11px;
+                padding: 2px 1px;
+            }
+            .fc .fc-daygrid-day-frame {
+                padding: 4px 2px;
+            }
+        }
         @media (max-width: 991px) {
             .booking-row {
                 grid-template-columns: 1fr;
@@ -951,14 +1006,20 @@
         }
     </style>
 </head>
-<body>
+<body class="portal-bg-fixed">
 <nav class="navbar">
-    <div class="container d-flex justify-content-between align-items-center">
+    <div class="container portal-navbar-inner">
         <a href="/" class="logo"><img src="{{ url_for('project_logo') }}" alt="Логотип компании"></a>
         <div class="topbar-actions">
-            <span class="topbar-user fw-medium text-muted">{{ user_display }}</span>
-            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">К ресурсам</a>
-            <a href="/logout" class="btn btn-light btn-sm topbar-btn">Выход</a>
+            <span class="topbar-user fw-medium text-muted d-none d-md-inline">{{ user_display }}</span>
+            <a href="/" class="btn btn-outline-secondary btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">К ресурсам</span>
+                <span class="d-inline d-sm-none">← Главная</span>
+            </a>
+            <a href="/logout" class="btn btn-light btn-sm topbar-btn">
+                <span class="d-none d-sm-inline">Выход</span>
+                <span class="d-inline d-sm-none">Вых.</span>
+            </a>
         </div>
     </div>
 </nav>
@@ -1045,7 +1106,7 @@
                 </div>
                 <p class="field-hint">Время можно выбрать из списка или ввести с клавиатуры в формате ЧЧ:ММ</p>
                 <div class="form-actions">
-                    <button id="submitBtn" class="btn btn-primary btn-sm">Сохранить бронь</button>
+                    <button id="submitBtn" class="btn btn-primary" type="submit">Сохранить бронь</button>
                     <button id="deleteBtn" type="button" class="btn btn-outline-danger btn-sm d-none">Отменить бронь</button>
                     <button id="historyBtn" type="button" class="btn btn-outline-secondary btn-sm d-none">История изменений</button>
                     <button id="cancelEditBtn" type="button" class="btn btn-outline-secondary btn-sm d-none">Отменить редактирование</button>
@@ -1085,31 +1146,29 @@
         {% endif %}
     </div>
 
-    <section class="panel mt-3">
+    <section class="panel">
         <div class="panel-header">
             <div>
                 <h2 class="section-title mb-0">График броней</h2>
                 <p class="section-subtitle">Все будущие и текущие брони в одном списке.</p>
             </div>
-            <div class="schedule-toolbar">
-                <div class="schedule-date-tools d-none">
-                    <input id="listDateFilter" type="text" class="form-control form-control-sm date-filter-input" placeholder="Дата: ДД.ММ.ГГГГ">
-                    <button id="todayFilterBtn" type="button" class="btn btn-outline-secondary btn-sm">Сегодня</button>
-                    <span id="activeDateChip" class="date-chip d-none">
-                        <span id="activeDateLabel">Дата</span>
-                        <button id="clearDateFilterBtn" type="button" title="Сбросить дату">✕</button>
-                    </span>
-                </div>
-                <div class="schedule-search-wrap">
-                    <span class="schedule-search-icon" aria-hidden="true">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="7"></circle>
-                            <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
-                        </svg>
-                    </span>
-                    <input id="filterInput" class="schedule-search" placeholder="Поиск: человек, тема встречи, переговорка">
-                </div>
-            </div>
+        </div>
+        <div class="schedule-date-tools d-none">
+            <input id="listDateFilter" type="text" class="form-control form-control-sm date-filter-input" placeholder="Дата: ДД.ММ.ГГГГ">
+            <button id="todayFilterBtn" type="button" class="btn btn-outline-secondary btn-sm">Сегодня</button>
+            <span id="activeDateChip" class="date-chip d-none">
+                <span id="activeDateLabel">Дата</span>
+                <button id="clearDateFilterBtn" type="button" title="Сбросить дату">✕</button>
+            </span>
+        </div>
+        <div class="schedule-search-wrap mb-3">
+            <span class="schedule-search-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
+                </svg>
+            </span>
+            <input id="filterInput" class="schedule-search" placeholder="Поиск: человек, тема встречи, переговорка">
         </div>
         <p class="hint-text">Нажмите на событие в календаре, чтобы развернуть или скрыть подробности.</p>
         <div class="planner-wrap">
