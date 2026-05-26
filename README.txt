@@ -123,6 +123,20 @@ database_before_import_ГГГГ-ММ-ДД_ЧЧ-ММ-СС.db в каталоге 
 2) Запуск через Gunicorn (слушает 127.0.0.1:5004, см. deploy/gunicorn.conf.py):
    gunicorn -c deploy/gunicorn.conf.py wsgi:app
 
+Курсы НБ РБ на главной (api.nbrb.by)
+------------------------------------
+Локально обычно работает сразу. На сервере за корпоративным прокси/МЭ возможна ошибка
+SSL (self-signed certificate in certificate chain) — трафик перехватывается своим
+сертификатом. Варианты для администратора:
+
+  export NBRB_SSL_CA_FILE=/path/to/corporate-root-ca.pem
+  (предпочтительно: корневой сертификат вашей организации)
+
+  export NBRB_SSL_VERIFY=0
+  (временно отключить проверку SSL только для запросов к НБ РБ; менее безопасно)
+
+После изменения переменных перезапустите Gunicorn/systemd.
+
 3) Nginx: скопируйте пример deploy/nginx-site.conf.example и настройте server_name,
    SSL и proxy_pass на upstream flask_app.
 

@@ -17,6 +17,7 @@ from email.message import EmailMessage
 from email.utils import format_datetime
 from email.header import Header
 from email import policy
+import ssl
 from urllib.parse import urlparse
 from urllib.parse import urlencode
 from urllib import request as urllib_request
@@ -1317,6 +1318,43 @@ _nbrb_cache_lock = threading.Lock()
 NBRB_CACHE_TTL_SEC = 600
 
 
+def _env_truthy(name, default='1'):
+    return os.environ.get(name, default).strip().lower() not in ('0', 'false', 'no', 'off')
+
+
+def _nbrb_ssl_context():
+    """SSL для api.nbrb.by. На сервере за прокси/МЭ часто нужен NBRB_SSL_CA_FILE или NBRB_SSL_VERIFY=0."""
+    if not _env_truthy('NBRB_SSL_VERIFY', '1'):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    ca_file = os.environ.get('NBRB_SSL_CA_FILE', '').strip()
+    if ca_file:
+        if os.path.isfile(ca_file):
+            return ssl.create_default_context(cafile=ca_file)
+        app.logger.warning('NBRB_SSL_CA_FILE не найден: %s', ca_file)
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def _nbrb_fetch_error_message(exc):
+    reason = getattr(exc, 'reason', exc)
+    text = str(reason)
+    if 'CERTIFICATE_VERIFY_FAILED' in text or 'certificate verify failed' in text.lower():
+        return (
+            'Курсы НБ РБ недоступны: на сервере не проходит проверка SSL '
+            '(часто из‑за корпоративного прокси или МЭ). '
+            'Администратору: корневой сертификат в NBRB_SSL_CA_FILE '
+            'или временно NBRB_SSL_VERIFY=0.'
+        )
+    return f'НБ РБ недоступен: {text}'
+
+
 def _parse_nbrb_request_date(raw):
     if not raw:
         return datetime.now(APP_TZ).date(), None
@@ -1342,17 +1380,22 @@ def _fetch_nbrb_rates(on_date: date_type):
         if cached and (now_ts - cached['ts']) < NBRB_CACHE_TTL_SEC:
             return cached['data'], None
     url = f'{NBRB_RATES_API}?ondate={cache_key}&periodicity=0'
+    ssl_ctx = _nbrb_ssl_context()
     try:
         req = urllib_request.Request(
             url,
             headers={'Accept': 'application/json', 'User-Agent': 'BelnipiPortal/1.0'},
         )
-        with urllib_request.urlopen(req, timeout=20) as resp:
+        with urllib_request.urlopen(req, timeout=20, context=ssl_ctx) as resp:
             payload = json.loads(resp.read().decode('utf-8'))
     except HTTPError as exc:
         return None, f'НБ РБ: HTTP {exc.code}'
     except URLError as exc:
-        return None, f'НБ РБ недоступен: {exc.reason}'
+        app.logger.warning('NBRB rates fetch failed for %s: %s', cache_key, exc)
+        return None, _nbrb_fetch_error_message(exc)
+    except ssl.SSLError as exc:
+        app.logger.warning('NBRB rates SSL error for %s: %s', cache_key, exc)
+        return None, _nbrb_fetch_error_message(exc)
     except (TimeoutError, json.JSONDecodeError, OSError, ValueError) as exc:
         return None, str(exc)
     if not isinstance(payload, list):
