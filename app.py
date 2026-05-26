@@ -1311,7 +1311,7 @@ def check_ldap_auth(username, password):
 
 
 NBRB_RATES_API = 'https://api.nbrb.by/exrates/rates'
-NBRB_DISPLAY_CURRENCIES = ('USD', 'EUR', 'RUB', 'PLN', 'CNY', 'UAH')
+NBRB_DISPLAY_CURRENCIES = ('USD', 'EUR', 'RUB')
 _nbrb_rates_cache = {}
 _nbrb_cache_lock = threading.Lock()
 NBRB_CACHE_TTL_SEC = 600
