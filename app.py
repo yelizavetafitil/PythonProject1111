@@ -1063,6 +1063,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS meeting_bookings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 room_id INTEGER NOT NULL,
+                room_name TEXT,
                 booked_by TEXT NOT NULL,
                 purpose TEXT NOT NULL,
                 participants_json TEXT DEFAULT '[]',
@@ -1171,6 +1172,15 @@ def init_db():
             conn.execute("ALTER TABLE meeting_bookings ADD COLUMN canceled_by TEXT")
         if 'canceled_at' not in booking_column_names:
             conn.execute("ALTER TABLE meeting_bookings ADD COLUMN canceled_at TEXT")
+        if 'room_name' not in booking_column_names:
+            conn.execute("ALTER TABLE meeting_bookings ADD COLUMN room_name TEXT")
+            conn.execute('''
+                UPDATE meeting_bookings
+                SET room_name = (
+                    SELECT r.name FROM meeting_rooms r WHERE r.id = meeting_bookings.room_id
+                )
+                WHERE room_name IS NULL OR TRIM(room_name) = ''
+            ''')
         driver_trip_columns = conn.execute("PRAGMA table_info(driver_trips)").fetchall()
         driver_trip_column_names = {row['name'] for row in driver_trip_columns}
         if 'vehicle_color' not in driver_trip_column_names:
@@ -1870,6 +1880,70 @@ def knowledge_base_download_file(category_name, file_path):
     return send_file(target_path, as_attachment=True, download_name=os.path.basename(target_path))
 
 
+_MEETING_BOOKING_SELECT = '''
+    b.id, b.room_id, COALESCE(r.name, b.room_name) AS room_name, b.booked_by, b.purpose,
+    b.participants_json, b.meeting_date, b.start_time, b.end_time,
+    COALESCE(b.booking_status, 'active') AS booking_status,
+    b.canceled_by, b.canceled_at, b.owner_username
+'''
+
+_MEETING_BOOKING_FROM = '''
+    FROM meeting_bookings b
+    LEFT JOIN meeting_rooms r ON r.id = b.room_id
+'''
+
+
+def _get_room_name_by_id(conn, room_id):
+    row = conn.execute('SELECT name FROM meeting_rooms WHERE id = ?', (room_id,)).fetchone()
+    return (row['name'] if row else '').strip()
+
+
+def _fetch_meeting_booking_row(conn, booking_id):
+    return conn.execute(
+        f'''
+        SELECT {_MEETING_BOOKING_SELECT}
+        {_MEETING_BOOKING_FROM}
+        WHERE b.id = ?
+        ''',
+        (booking_id,),
+    ).fetchone()
+
+
+def _sync_booking_room_names(conn, room_id, room_name):
+    conn.execute(
+        'UPDATE meeting_bookings SET room_name = ? WHERE room_id = ?',
+        (room_name, room_id),
+    )
+
+
+def _sync_room_name_in_booking_history(conn, room_id, room_name):
+    booking_rows = conn.execute(
+        'SELECT id FROM meeting_bookings WHERE room_id = ?',
+        (room_id,),
+    ).fetchall()
+    for booking_row in booking_rows:
+        history_rows = conn.execute(
+            'SELECT id, details_json FROM meeting_booking_history WHERE booking_id = ?',
+            (booking_row['id'],),
+        ).fetchall()
+        for history_row in history_rows:
+            try:
+                details = json.loads(history_row['details_json'] or '{}')
+            except (json.JSONDecodeError, TypeError):
+                continue
+            changed = False
+            for state_key in ('before', 'after'):
+                state = details.get(state_key)
+                if isinstance(state, dict) and 'room_name' in state:
+                    state['room_name'] = room_name
+                    changed = True
+            if changed:
+                conn.execute(
+                    'UPDATE meeting_booking_history SET details_json = ? WHERE id = ?',
+                    (json.dumps(details, ensure_ascii=False), history_row['id']),
+                )
+
+
 @app.route('/api/meeting-rooms')
 def get_meeting_rooms():
     if not session.get('logged_in'):
@@ -1902,15 +1976,44 @@ def create_meeting_room():
         conn.close()
 
 
+@app.route('/api/meeting-rooms/<int:room_id>', methods=['PUT'])
+def update_meeting_room(room_id):
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False, error='Только администратор может редактировать переговорки'), 403
+    data = request.json or {}
+    room_name = (data.get('name') or '').strip()
+    if not room_name:
+        return jsonify(success=False, error='Укажите название переговорки'), 400
+    conn = get_db_connection()
+    try:
+        room = conn.execute('SELECT id FROM meeting_rooms WHERE id = ?', (room_id,)).fetchone()
+        if not room:
+            return jsonify(success=False, error='Переговорка не найдена'), 404
+        exists = conn.execute(
+            'SELECT 1 FROM meeting_rooms WHERE name = ? AND id != ?',
+            (room_name, room_id),
+        ).fetchone()
+        if exists:
+            return jsonify(success=False, error='Такая переговорка уже существует'), 409
+        conn.execute('UPDATE meeting_rooms SET name = ? WHERE id = ?', (room_name, room_id))
+        _sync_booking_room_names(conn, room_id, room_name)
+        _sync_room_name_in_booking_history(conn, room_id, room_name)
+        conn.commit()
+        return jsonify(success=True)
+    finally:
+        conn.close()
+
+
 @app.route('/api/meeting-rooms/<int:room_id>', methods=['DELETE'])
 def delete_meeting_room(room_id):
     if session.get('username') not in MASTER_ADMINS:
         return jsonify(success=False, error='Только администратор может удалять переговорки'), 403
     conn = get_db_connection()
     try:
-        has_bookings = conn.execute('SELECT 1 FROM meeting_bookings WHERE room_id = ? LIMIT 1', (room_id,)).fetchone()
-        if has_bookings:
-            return jsonify(success=False, error='Нельзя удалить переговорку: есть существующие брони'), 409
+        room = conn.execute('SELECT id, name FROM meeting_rooms WHERE id = ?', (room_id,)).fetchone()
+        if not room:
+            return jsonify(success=False, error='Переговорка не найдена'), 404
+        _sync_booking_room_names(conn, room_id, room['name'])
         conn.execute('DELETE FROM meeting_rooms WHERE id = ?', (room_id,))
         conn.commit()
         return jsonify(success=True)
@@ -2126,13 +2229,9 @@ def get_meeting_bookings():
         return jsonify([]), 403
     conn = get_db_connection()
     try:
-        rows = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                b.booking_status, b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
+        rows = conn.execute(f'''
+            SELECT {_MEETING_BOOKING_SELECT}
+            {_MEETING_BOOKING_FROM}
             ORDER BY b.meeting_date ASC, b.start_time ASC
         ''').fetchall()
         data = []
@@ -2178,24 +2277,19 @@ def create_meeting_booking():
             return jsonify(success=False, error='Выбранная переговорка не найдена'), 404
         if _meeting_has_conflict(conn, payload):
             return jsonify(success=False, error='На выбранное время переговорка уже занята'), 409
+        room_name = _get_room_name_by_id(conn, payload['room_id'])
         conn.execute('''
             INSERT INTO meeting_bookings (
-                room_id, booked_by, purpose, participants_json, meeting_date, start_time, end_time, owner_username
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                room_id, room_name, booked_by, purpose, participants_json,
+                meeting_date, start_time, end_time, owner_username
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            payload['room_id'], booked_by, payload['purpose'], json.dumps(payload['participants'], ensure_ascii=False),
+            payload['room_id'], room_name, booked_by, payload['purpose'],
+            json.dumps(payload['participants'], ensure_ascii=False),
             payload['meeting_date'], payload['start_time'], payload['end_time'], session.get('username')
         ))
         booking_id = conn.execute('SELECT last_insert_rowid() AS id').fetchone()['id']
-        created_row = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                b.booking_status, b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
-            WHERE b.id = ?
-        ''', (booking_id,)).fetchone()
+        created_row = _fetch_meeting_booking_row(conn, booking_id)
         _log_booking_history(conn, booking_id, 'created', session.get('username'), {
             'after': _serialize_booking_state(created_row)
         })
@@ -2229,16 +2323,7 @@ def update_meeting_booking(booking_id):
         return jsonify(success=False, error='Нельзя сохранять бронь на прошедшие дату и время'), 400
     conn = get_db_connection()
     try:
-        booking = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                COALESCE(b.booking_status, 'active') AS booking_status,
-                b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
-            WHERE b.id = ?
-        ''', (booking_id,)).fetchone()
+        booking = _fetch_meeting_booking_row(conn, booking_id)
         if not booking:
             return jsonify(success=False, error='Бронь не найдена'), 404
         if booking['booking_status'] == 'canceled':
@@ -2251,25 +2336,19 @@ def update_meeting_booking(booking_id):
             return jsonify(success=False, error='Выбранная переговорка не найдена'), 404
         if _meeting_has_conflict(conn, payload, booking_id=booking_id):
             return jsonify(success=False, error='На выбранное время переговорка уже занята'), 409
+        room_name = _get_room_name_by_id(conn, payload['room_id'])
         conn.execute('''
             UPDATE meeting_bookings
-            SET room_id = ?, purpose = ?, participants_json = ?, meeting_date = ?, start_time = ?, end_time = ?,
+            SET room_id = ?, room_name = ?, purpose = ?, participants_json = ?,
+                meeting_date = ?, start_time = ?, end_time = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (
-            payload['room_id'], payload['purpose'], json.dumps(payload['participants'], ensure_ascii=False),
+            payload['room_id'], room_name, payload['purpose'],
+            json.dumps(payload['participants'], ensure_ascii=False),
             payload['meeting_date'], payload['start_time'], payload['end_time'], booking_id
         ))
-        updated_row = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                COALESCE(b.booking_status, 'active') AS booking_status,
-                b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
-            WHERE b.id = ?
-        ''', (booking_id,)).fetchone()
+        updated_row = _fetch_meeting_booking_row(conn, booking_id)
         _log_booking_history(conn, booking_id, 'updated', current_user, {
             'before': _serialize_booking_state(booking),
             'after': _serialize_booking_state(updated_row)
@@ -2286,16 +2365,7 @@ def delete_meeting_booking(booking_id):
         return jsonify(success=False), 403
     conn = get_db_connection()
     try:
-        booking = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                COALESCE(b.booking_status, 'active') AS booking_status,
-                b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
-            WHERE b.id = ?
-        ''', (booking_id,)).fetchone()
+        booking = _fetch_meeting_booking_row(conn, booking_id)
         if not booking:
             return jsonify(success=False, error='Бронь не найдена'), 404
         current_user = session.get('username')
@@ -2311,23 +2381,13 @@ def delete_meeting_booking(booking_id):
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
         ''', (current_user, datetime.now(APP_TZ).strftime('%Y-%m-%d %H:%M:%S'), booking_id))
-        booking_info = conn.execute('''
+        booking_info = conn.execute(f'''
             SELECT b.meeting_date, b.start_time, b.end_time, b.purpose,
-                   r.name AS room_name, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
+                   COALESCE(r.name, b.room_name) AS room_name, b.owner_username
+            {_MEETING_BOOKING_FROM}
             WHERE b.id = ?
         ''', (booking_id,)).fetchone()
-        canceled_row = conn.execute('''
-            SELECT
-                b.id, b.room_id, r.name AS room_name, b.booked_by, b.purpose,
-                b.participants_json, b.meeting_date, b.start_time, b.end_time,
-                COALESCE(b.booking_status, 'active') AS booking_status,
-                b.canceled_by, b.canceled_at, b.owner_username
-            FROM meeting_bookings b
-            JOIN meeting_rooms r ON r.id = b.room_id
-            WHERE b.id = ?
-        ''', (booking_id,)).fetchone()
+        canceled_row = _fetch_meeting_booking_row(conn, booking_id)
         _log_booking_history(conn, booking_id, 'canceled', current_user, {
             'before': _serialize_booking_state(booking),
             'after': _serialize_booking_state(canceled_row)

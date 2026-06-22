@@ -15,6 +15,8 @@
             --bg: #edf3fb;
             --border: #d8e2f0;
             --text: #1c2f4b;
+            --muted-text: #667f9f;
+            --card-shadow: 0 8px 22px rgba(21, 45, 84, 0.1);
         }
         body {
             background-color: #081a48;
@@ -68,61 +70,110 @@
         }
 
         .admin-container { margin: 24px auto; }
-        .admin-hero {
-            background: rgba(255, 255, 255, 0.84);
-            border: 1px solid rgba(205, 220, 243, 0.88);
+        .admin-portal-body {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .category-group {
+            padding: 12px 12px 14px;
             border-radius: 14px;
-            padding: 18px 20px;
-            margin-bottom: 16px;
-            backdrop-filter: blur(4px);
-            box-shadow: 0 8px 20px rgba(17, 46, 90, 0.08);
-        }
-        .admin-hero-title {
-            margin: 0 0 6px 0;
-            font-size: 18px;
-            font-weight: 700;
-            color: #1f4f96;
-        }
-        .admin-hero-subtitle {
-            margin: 0;
-            color: #5a7090;
-            font-size: 14px;
-        }
-        .panel {
-            background: rgba(255, 255, 255, 0.82);
+            background: rgba(255, 255, 255, 0.72);
             border: 1px solid rgba(205, 220, 243, 0.88);
-            border-radius: 14px;
-            padding: 22px;
             backdrop-filter: blur(3px);
             box-shadow: 0 8px 20px rgba(17, 46, 90, 0.08);
         }
-        .groups-panel { width: 100%; }
-        .categories-panel { width: 100%; }
-
-        .section-title { font-weight: 700; font-size: 16px; margin-bottom: 0; display: flex; align-items: center; gap: 8px; color: #334155; }
-
-        .groups-toolbar {
+        .category-header {
+            font-weight: 700;
+            font-size: 12px;
+            color: #5a7090;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
+            gap: 8px;
+            border-bottom: 1px solid #dfe8f5;
+            padding-bottom: 8px;
         }
-        .categories-toolbar {
+        .admin-action-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .admin-action-card {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 11px 12px;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
+            gap: 10px;
+            text-align: left;
+            width: 100%;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: var(--card-shadow);
+            color: inherit;
+            font: inherit;
+        }
+        .admin-action-card:hover {
+            border-color: #98b8e5;
+            box-shadow: 0 12px 22px rgba(17, 46, 90, 0.14);
+            transform: translateY(-1px);
+        }
+        .admin-access-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            align-items: start;
+        }
+        .admin-tile {
+            background: #ffffff;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 12px;
+            box-shadow: var(--card-shadow);
+            min-width: 0;
+        }
+        .admin-tile-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .icon-container {
+            width: 36px;
+            height: 36px;
+            background: #f4f7fc;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            border: 1px solid #dde7f5;
+            color: var(--primary);
+        }
+        .card-title {
+            font-weight: 600;
+            font-size: 13px;
+            margin: 0 0 3px 0;
+            color: var(--text);
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        .card-desc {
+            font-size: 11px;
+            color: var(--muted-text);
+            line-height: 1.35;
+            margin: 0;
         }
         .groups-actions {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
             gap: 8px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
         }
         .groups-actions .form-control {
             flex: 1 1 200px;
@@ -136,11 +187,6 @@
             align-items: center;
             justify-content: center;
             white-space: nowrap;
-        }
-        .groups-actions-hint {
-            max-width: 720px;
-            line-height: 1.45;
-            margin-bottom: 12px;
         }
         .category-actions {
             display: grid;
@@ -201,26 +247,41 @@
             font-size: 12px;
             color: #6b809d;
         }
-        #gList { display: grid; gap: 12px; }
-        .group-item {
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 14px 14px 12px;
-            transition: 0.2s ease;
-            background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,252,255,0.95) 100%);
-            box-shadow: 0 4px 10px rgba(17, 46, 90, 0.06);
+        #gList {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
         }
-        .group-item:hover { border-color: #8fb3e6; box-shadow: 0 10px 20px rgba(17, 46, 90, 0.1); transform: translateY(-1px); }
-        .group-item.active {
-            border-color: var(--primary);
-            background: linear-gradient(180deg, #ffffff 0%, #f4f9ff 100%);
-            box-shadow: 0 0 0 3px rgba(28, 79, 156, 0.1), 0 10px 18px rgba(17, 46, 90, 0.08);
+        .group-item {
+            transition: 0.2s ease;
+        }
+        .group-item:hover {
+            border-color: #98b8e5;
+            box-shadow: 0 12px 22px rgba(17, 46, 90, 0.14);
+            transform: translateY(-1px);
         }
         .group-title {
             min-width: 0;
             line-height: 1.35;
             overflow-wrap: anywhere;
             word-break: break-word;
+        }
+        .admin-tile-delete {
+            border: none;
+            background: transparent;
+            color: #dc3545;
+            padding: 0;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .admin-tile-delete:hover { color: #b02a37; }
+        .admin-chip-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6b81a2;
+            margin: 10px 0 6px;
         }
 
         .member-list {
@@ -322,8 +383,6 @@
         .btn-primary { background: var(--primary); border-color: var(--primary); }
         .btn-primary:hover { background: var(--primary-soft); border-color: var(--primary-soft); }
         .btn-primary:focus { box-shadow: 0 0 0 3px rgba(28, 79, 156, 0.18); }
-        .access-export-toolbar .btn-action { min-height: 38px; }
-        .access-export-hint { max-width: 720px; line-height: 1.45; }
         .form-control, .form-select { border-radius: 8px; border: 1px solid var(--border); font-size: 14px; }
         .form-control:focus, .form-select:focus {
             border-color: var(--primary);
@@ -334,15 +393,18 @@
         .modal-content { border-radius: 12px; border: none; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
         .modal-header { border-bottom: 1px solid var(--border); padding: 20px 24px; }
         .modal-body { padding: 24px; }
+        @media (max-width: 1199px) {
+            .admin-access-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
         @media (max-width: 991px) {
             .admin-container { padding: 0 10px; }
+            .admin-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         @media (max-width: 768px) {
             .groups-actions .form-control { max-width: none; flex: 1 1 100%; }
-            .groups-toolbar { align-items: stretch; }
             .category-row, .category-row-inline { grid-template-columns: 1fr; }
             .split-item { grid-template-columns: 1fr; }
-            .admin-hero { padding: 16px; }
+            .admin-access-grid, .admin-action-grid, #gList { grid-template-columns: 1fr; }
             .modal-body, .modal-header { padding: 16px; }
         }
     </style>
@@ -357,132 +419,144 @@
 </div></nav>
 
 <div class="container admin-container">
-    <div class="admin-hero">
-        <h5 class="admin-hero-title">Администрирование доступа</h5>
-        <p class="admin-hero-subtitle">Создавайте группы, добавляйте участников из AD и управляйте доступом к ресурсам в одном окне.</p>
-        <div class="access-export-toolbar mt-3">
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button type="button" class="btn btn-primary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="exportAccessPermissions()">
-                    <i data-lucide="download" size="16"></i>
-                    <span>Скачать настройки (JSON)</span>
+    <div class="admin-portal-body">
+        <section class="category-group">
+            <div class="category-header"><i data-lucide="database" size="14"></i> Резервное копирование</div>
+            <div class="admin-action-grid">
+                <button type="button" class="admin-action-card" onclick="exportAccessPermissions()">
+                    <div class="icon-container"><i data-lucide="download" size="18"></i></div>
+                    <div>
+                        <div class="card-title">Скачать настройки</div>
+                        <div class="card-desc">JSON</div>
+                    </div>
                 </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="document.getElementById('accessImportInput').click()">
-                    <i data-lucide="upload" size="16"></i>
-                    <span>Загрузить настройки (JSON)</span>
+                <button type="button" class="admin-action-card" onclick="document.getElementById('accessImportInput').click()">
+                    <div class="icon-container"><i data-lucide="upload" size="18"></i></div>
+                    <div>
+                        <div class="card-title">Загрузить настройки</div>
+                        <div class="card-desc">JSON</div>
+                    </div>
                 </button>
                 <input type="file" id="accessImportInput" accept=".json,application/json" class="d-none" onchange="importAccessPermissions(this)">
-            </div>
-            <p class="small text-muted access-export-hint mt-2 mb-0">
-                Имя файла при выгрузке: дата и время, например <code>access_2026-05-11_08-39-42.json</code>.
-            </p>
-            <hr class="my-3 opacity-25">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Полная копия базы (SQLite)</div>
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button type="button" class="btn btn-primary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="exportDatabaseFile()">
-                    <i data-lucide="database" size="16"></i>
-                    <span>Скачать базу (.db)</span>
+                <button type="button" class="admin-action-card" onclick="exportDatabaseFile()">
+                    <div class="icon-container"><i data-lucide="database" size="18"></i></div>
+                    <div>
+                        <div class="card-title">Скачать базу</div>
+                        <div class="card-desc">SQLite .db</div>
+                    </div>
                 </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3 d-inline-flex align-items-center gap-2" onclick="document.getElementById('dbImportInput').click()">
-                    <i data-lucide="upload" size="16"></i>
-                    <span>Загрузить базу (.db)</span>
+                <button type="button" class="admin-action-card" onclick="document.getElementById('dbImportInput').click()">
+                    <div class="icon-container"><i data-lucide="upload" size="18"></i></div>
+                    <div>
+                        <div class="card-title">Загрузить базу</div>
+                        <div class="card-desc">SQLite .db</div>
+                    </div>
                 </button>
                 <input type="file" id="dbImportInput" accept=".db,application/octet-stream,application/x-sqlite3" class="d-none" onchange="importDatabaseFile(this)">
             </div>
-            <p class="small text-muted access-export-hint mt-2 mb-0">
-                Перед заменой текущая база сохраняется рядом в файл <code>database_before_import_…</code>.
-                Импорт недоступен, если файл <code>database.db</code> занят другим процессом; на продакшене лучше остановить воркеры на время замены.
-            </p>
-        </div>
+        </section>
+
+        <section class="category-group">
+            <div class="category-header"><i data-lucide="users" size="14"></i> Группы доступа</div>
+            <div class="groups-actions">
+                <input type="text" id="gn" class="form-control form-control-sm" placeholder="Название группы">
+                <button type="button" class="btn btn-primary btn-sm btn-action px-3" onclick="addG()">Создать</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3" onclick="syncUsersGroupFromAd()" title="Синхронизировать группу «Пользователи» из AD">Синхр. «Пользователи»</button>
+            </div>
+            <div id="gList"></div>
+        </section>
+
+        <section class="category-group">
+            <div class="category-header"><i data-lucide="shield" size="14"></i> Расширенный доступ</div>
+            <div class="admin-access-grid">
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="shield" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">Телефонная книга</div>
+                            <div class="card-desc">Полные номера сотрудников</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="phonebookAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchPhonebookAccessAD()">
+                    </div>
+                    <div id="phonebookAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="phonebookAccessList" class="member-list"></div>
+                </div>
+
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="clipboard" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">Табель</div>
+                            <div class="card-desc">Мониторинг статусов</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="tabelAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchTabelAccessAD()">
+                    </div>
+                    <div id="tabelAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="tabelAccessList" class="member-list"></div>
+                </div>
+
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="calendar-check" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">Бронирование</div>
+                            <div class="card-desc">Правка чужих броней</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="bookingAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchBookingAccessAD()">
+                    </div>
+                    <div id="bookingAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="bookingAccessList" class="member-list"></div>
+                </div>
+
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="edit-3" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">Ресурсы портала</div>
+                            <div class="card-desc">Редактирование карточек</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="resourceAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchResourceAccessAD()">
+                    </div>
+                    <div id="resourceAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="resourceAccessList" class="member-list"></div>
+                </div>
+
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="sparkles" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">БелнипиAI</div>
+                            <div class="card-desc">Доступ к ассистенту</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="aiAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchAiAccessAD()">
+                    </div>
+                    <div id="aiAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="aiAccessList" class="member-list"></div>
+                </div>
+            </div>
+        </section>
     </div>
-    <div class="row g-4">
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="users"></i> Группы доступа</div>
-        </div>
-        <div class="groups-actions">
-            <input type="text" id="gn" class="form-control form-control-sm" placeholder="Название группы">
-            <button type="button" class="btn btn-primary btn-sm btn-action px-3" onclick="addG()">Создать</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3 d-inline-flex align-items-center" onclick="syncUsersGroupFromAd()" title="Добавить все учётные записи из Active Directory в группу «Пользователи»">Синхронизировать «Пользователи» из AD</button>
-        </div>
-        <p class="small text-muted groups-actions-hint">Группа «Пользователи»: все учётные записи AD; ресурсы с этой группой видят все авторизованные пользователи.</p>
-        <div id="gList"></div>
-    </div></div>
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="shield"></i> Расширенный доступ к телефону</div>
-            <div class="small text-muted">По умолчанию у всех только служебный номер. Добавленные пользователи видят все номера.</div>
-        </div>
-        <div class="ad-search-box">
-            <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-            <input type="text" id="phonebookAccessSearch" class="form-control ad-search-input" placeholder="Найти пользователя или группу в AD..." oninput="searchPhonebookAccessAD()">
-        </div>
-        <div id="phonebookAccessSearchResults" class="ad-results-list"></div>
-        <div class="mt-3">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Добавленные пользователи и группы AD</div>
-            <div id="phonebookAccessList" class="member-list"></div>
-        </div>
-    </div></div>
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="clipboard"></i> Доступ к странице мониторинга табеля</div>
-            <div class="small text-muted">Доступ к табелю: группа на карточке ресурса «Табель» или этот список (достаточно одного). Мастер-админы — всегда.</div>
-        </div>
-        <div class="ad-search-box">
-            <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-            <input type="text" id="tabelAccessSearch" class="form-control ad-search-input" placeholder="Найти пользователя или группу в AD..." oninput="searchTabelAccessAD()">
-        </div>
-        <div id="tabelAccessSearchResults" class="ad-results-list"></div>
-        <div class="mt-3">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Добавленные пользователи и группы AD</div>
-            <div id="tabelAccessList" class="member-list"></div>
-        </div>
-    </div></div>
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="calendar-check"></i> Расширенный доступ к бронированию</div>
-            <div class="small text-muted">Вход на страницы бронирования: группа на карточке ресурса или этот список. Здесь же — право править чужие брони.</div>
-        </div>
-        <div class="ad-search-box">
-            <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-            <input type="text" id="bookingAccessSearch" class="form-control ad-search-input" placeholder="Найти пользователя или группу в AD..." oninput="searchBookingAccessAD()">
-        </div>
-        <div id="bookingAccessSearchResults" class="ad-results-list"></div>
-        <div class="mt-3">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Добавленные пользователи и группы AD</div>
-            <div id="bookingAccessList" class="member-list"></div>
-        </div>
-    </div></div>
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="edit-3"></i> Расширенный доступ к ресурсам</div>
-            <div class="small text-muted">Добавленные пользователи и группы AD могут добавлять, редактировать, удалять и сортировать ресурсы.</div>
-        </div>
-        <div class="ad-search-box">
-            <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-            <input type="text" id="resourceAccessSearch" class="form-control ad-search-input" placeholder="Найти пользователя или группу в AD..." oninput="searchResourceAccessAD()">
-        </div>
-        <div id="resourceAccessSearchResults" class="ad-results-list"></div>
-        <div class="mt-3">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Добавленные пользователи и группы AD</div>
-            <div id="resourceAccessList" class="member-list"></div>
-        </div>
-    </div></div>
-    <div class="col-12"><div class="panel groups-panel">
-        <div class="groups-toolbar">
-            <div class="section-title"><i data-lucide="sparkles"></i> Доступ к БелнипиAI</div>
-            <div class="small text-muted">Доступ к ИИ: группа на карточке ресурса или этот список (достаточно одного).</div>
-        </div>
-        <div class="ad-search-box">
-            <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-            <input type="text" id="aiAccessSearch" class="form-control ad-search-input" placeholder="Найти пользователя или группу в AD..." oninput="searchAiAccessAD()">
-        </div>
-        <div id="aiAccessSearchResults" class="ad-results-list"></div>
-        <div class="mt-3">
-            <div class="small fw-bold text-uppercase text-muted mb-2">Добавленные пользователи и группы AD</div>
-            <div id="aiAccessList" class="member-list"></div>
-        </div>
-    </div></div>
-</div></div>
+</div>
 
 <div class="modal fade" id="confirmDeleteModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -660,7 +734,6 @@
         if (isDefaultUsersGroup && !usersGroupListExpanded) {
             return `
                 <div class="users-group-collapsed-summary w-100">
-                    <p class="small text-muted mb-2">Состав заполняется из Active Directory. Полный список логинов по умолчанию скрыт — для работы достаточно знать, что в группе <strong>${g.members.length}</strong> учётных записей.</p>
                     <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setUsersGroupListExpanded(true)">Показать список (${g.members.length})</button>
                 </div>`;
         }
@@ -678,17 +751,21 @@
 
     function renderGroups() {
         document.getElementById('gList').innerHTML = groupsState.map(g => `
-            <div class="group-item active" id="card-${g.id}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <span class="group-title fw-bold small text-uppercase">${escapeHtml(g.name)} <small class="text-muted ms-2">${g.members.length} участников</small></span>
-                    <button class="btn btn-sm text-danger p-0" onclick="delG(${g.id})"><i data-lucide="trash-2" size="16"></i></button>
+            <div class="admin-tile group-item" id="card-${g.id}">
+                <div class="admin-tile-head">
+                    <div class="icon-container"><i data-lucide="users" size="18"></i></div>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="card-title">${escapeHtml(g.name)}</div>
+                        <div class="card-desc">${g.members.length} участников</div>
+                    </div>
+                    <button type="button" class="admin-tile-delete" title="Удалить группу" onclick="delG(${g.id})"><i data-lucide="trash-2" size="16"></i></button>
                 </div>
                 <div class="member-list">
                     ${renderGroupMembersHtml(g)}
                 </div>
                 <div class="ad-search-box">
                     <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
-                    <input type="text" id="adSearch-${g.id}" class="form-control ad-search-input" placeholder="Поиск в AD для этой группы..." oninput="searchAD(${g.id})">
+                    <input type="text" id="adSearch-${g.id}" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchAD(${g.id})">
                 </div>
                 <div id="adResults-${g.id}" class="ad-results-list"></div>
             </div>`).join('');

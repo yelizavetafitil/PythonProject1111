@@ -437,6 +437,9 @@
             font-size: 12px;
             line-height: 1;
         }
+        .room-chip button:hover {
+            color: var(--primary);
+        }
         .schedule-toolbar {
             display: flex;
             justify-content: space-between;
@@ -1137,6 +1140,7 @@
                 <div class="room-toolbar">
                     <input id="roomNameInput" class="form-control form-control-sm" placeholder="Название переговорки">
                     <button id="addRoomBtn" class="btn btn-outline-secondary btn-sm">Добавить</button>
+                    <button id="cancelRoomEditBtn" type="button" class="btn btn-outline-secondary btn-sm d-none">Отмена</button>
                 </div>
                 {% endif %}
             </div>
@@ -1251,6 +1255,7 @@
     let rooms = [];
     let bookings = [];
     let editId = null;
+    let editingRoomId = null;
     let selectedParticipants = [];
     let participantsSearchTimer = null;
     const formTitle = document.getElementById("formTitle");
@@ -1639,14 +1644,27 @@
         select.innerHTML = rooms.map((room) => `<option value="${room.id}">${room.name}</option>`).join("");
     }
 
+    function resetRoomEdit() {
+        editingRoomId = null;
+        const input = document.getElementById("roomNameInput");
+        const addBtn = document.getElementById("addRoomBtn");
+        const cancelBtn = document.getElementById("cancelRoomEditBtn");
+        if (input) input.value = "";
+        if (addBtn) addBtn.textContent = "Добавить";
+        if (cancelBtn) cancelBtn.classList.add("d-none");
+    }
+
     function renderRooms() {
         if (singleRoomMode) return;
         const wrap = document.getElementById("roomList");
         if (!wrap) return;
         wrap.innerHTML = rooms.map((room) => `
             <span class="room-chip">
-                ${room.name}
-                ${isAdmin ? `<button type="button" onclick="removeRoom(${room.id})">&times;</button>` : ""}
+                ${escapeHtml(room.name)}
+                ${isAdmin ? `
+                    <button type="button" title="Редактировать" onclick="startEditRoom(${room.id})">✎</button>
+                    <button type="button" title="Удалить" onclick="removeRoom(${room.id})">&times;</button>
+                ` : ""}
             </span>
         `).join("");
     }
@@ -2164,13 +2182,39 @@
         });
     }
 
+    window.startEditRoom = (roomId) => {
+        if (!isAdmin) return;
+        const room = rooms.find((item) => item.id === roomId);
+        if (!room) return;
+        editingRoomId = roomId;
+        const input = document.getElementById("roomNameInput");
+        const addBtn = document.getElementById("addRoomBtn");
+        const cancelBtn = document.getElementById("cancelRoomEditBtn");
+        if (input) {
+            input.value = room.name;
+            input.focus();
+            input.select();
+        }
+        if (addBtn) addBtn.textContent = "Сохранить";
+        if (cancelBtn) cancelBtn.classList.remove("d-none");
+    };
+
     window.removeRoom = async (roomId) => {
         if (!isAdmin) return;
-        const confirmed = await showConfirm("Удалить переговорку?", "Подтверждение удаления", "Удалить");
+        const room = rooms.find((item) => item.id === roomId);
+        const roomLabel = room ? room.name : "переговорку";
+        const confirmed = await showConfirm(
+            `Удалить «${roomLabel}»? Существующие брони и их история сохранятся.`,
+            "Подтверждение удаления",
+            "Удалить"
+        );
         if (!confirmed) return;
         try {
             await requestJson(`/api/meeting-rooms/${roomId}`, { method: "DELETE" });
+            if (editingRoomId === roomId) resetRoomEdit();
             await loadRooms();
+            await loadBookings();
+            buildRoomDropdown();
         } catch (error) {
             showInfo(error.message, "Ошибка");
         }
@@ -2358,12 +2402,28 @@
     cancelEditBtn.addEventListener("click", resetForm);
 
     const addRoomBtn = document.getElementById("addRoomBtn");
+    const cancelRoomEditBtn = document.getElementById("cancelRoomEditBtn");
+    if (cancelRoomEditBtn) {
+        cancelRoomEditBtn.addEventListener("click", resetRoomEdit);
+    }
     if (addRoomBtn) {
         addRoomBtn.addEventListener("click", async () => {
             const input = document.getElementById("roomNameInput");
             const name = (input.value || "").trim();
             if (!name) return;
             try {
+                if (editingRoomId) {
+                    await requestJson(`/api/meeting-rooms/${editingRoomId}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name })
+                    });
+                    resetRoomEdit();
+                    await loadRooms();
+                    await loadBookings();
+                    buildRoomDropdown();
+                    return;
+                }
                 await requestJson("/api/meeting-rooms", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
