@@ -96,6 +96,37 @@ MASTER_ADMINS = ['rapeiko', 'oc1']
 DEFAULT_USERS_GROUP_NAME = 'Пользователи'
 DB_PATH = 'database.db'
 GYM_ROOM_NAME = 'Спортзал'
+
+ALLOWED_RESOURCE_ICONS = frozenset({
+    'globe', 'mail', 'phone', 'calendar', 'calendar-check', 'clipboard', 'clipboard-list',
+    'book', 'book-open', 'dumbbell', 'truck', 'car', 'bus', 'plane', 'train', 'bike',
+    'map-pin', 'building', 'home', 'users', 'user', 'user-check', 'shield', 'lock', 'key',
+    'bell', 'message-square', 'messages-square', 'inbox', 'send', 'link', 'external-link',
+    'download', 'upload', 'database', 'server', 'cloud', 'wifi', 'monitor', 'smartphone',
+    'laptop', 'printer', 'camera', 'video', 'image', 'music', 'mic', 'headphones', 'wrench',
+    'settings', 'hammer', 'briefcase', 'graduation-cap', 'heart', 'star', 'sparkles', 'zap',
+    'activity', 'bar-chart', 'pie-chart', 'line-chart', 'calculator', 'credit-card', 'wallet',
+    'shopping-cart', 'package', 'archive', 'bookmark', 'tag', 'flag', 'clock', 'timer',
+    'file', 'file-text', 'files', 'folder', 'newspaper', 'factory', 'hard-hat',
+    'layout-dashboard', 'grid', 'list', 'landmark', 'layers',
+})
+
+RESOURCE_PATH_DEFAULT_ICONS = {
+    '/phonebook': 'phone',
+    '/meeting-rooms': 'calendar',
+    '/tabel': 'clipboard',
+    '/gym-booking': 'dumbbell',
+    '/knowledge-base': 'book',
+    '/driver-trips': 'truck',
+    '/ai-assistant': 'sparkles',
+}
+
+
+def normalize_resource_icon(raw_value):
+    name = (raw_value or '').strip().lower()
+    if not name:
+        return ''
+    return name if name in ALLOWED_RESOURCE_ICONS else ''
 LOGO_FILENAME = 'image2_hq.png'
 PHONEBOOK_PATH = 'phonebook.xlsx'
 PHONEBOOK_COLUMNS = ['dept', 'pos', 'surname', 'name', 'work', 'home', 'mobile']
@@ -1027,11 +1058,25 @@ def init_db():
             CREATE TABLE IF NOT EXISTS resources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT NOT NULL, url TEXT NOT NULL,
-                category TEXT NOT NULL, desc TEXT, 
+                category TEXT NOT NULL, desc TEXT,
+                icon TEXT,
                 position INTEGER DEFAULT 0
             )''')
 
         # 2. Создаем новую таблицу связей (МНОГИЕ-КО-МНОГИМ)
+        resource_columns = conn.execute("PRAGMA table_info(resources)").fetchall()
+        resource_column_names = {row['name'] for row in resource_columns}
+        if 'icon' not in resource_column_names:
+            conn.execute('ALTER TABLE resources ADD COLUMN icon TEXT')
+            for path, icon_name in RESOURCE_PATH_DEFAULT_ICONS.items():
+                conn.execute(
+                    '''
+                    UPDATE resources
+                    SET icon = ?
+                    WHERE (icon IS NULL OR TRIM(icon) = '') AND TRIM(url) = ?
+                    ''',
+                    (icon_name, path),
+                )
         conn.execute('''
             CREATE TABLE IF NOT EXISTS resource_group_access (
                 resource_id INTEGER,
@@ -1222,13 +1267,14 @@ def init_db():
         ).fetchone()
         if not driver_resource_exists:
             conn.execute(
-                'INSERT INTO resources (title, url, category, desc, position) VALUES (?, ?, ?, ?, ?)',
+                'INSERT INTO resources (title, url, category, desc, position, icon) VALUES (?, ?, ?, ?, ?, ?)',
                 (
                     'Сервис водителей',
                     '/driver-trips',
                     'Сервисы',
                     'Рейсы и командировки водителей за пределы г. Минска',
-                    0
+                    0,
+                    'truck',
                 )
             )
             conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', ('Сервисы',))
@@ -1238,13 +1284,14 @@ def init_db():
         ).fetchone()
         if not ai_resource_exists:
             conn.execute(
-                'INSERT INTO resources (title, url, category, desc, position) VALUES (?, ?, ?, ?, ?)',
+                'INSERT INTO resources (title, url, category, desc, position, icon) VALUES (?, ?, ?, ?, ?, ?)',
                 (
                     'БелнипиAI',
                     '/ai-assistant',
                     'Сервисы',
                     'Интеллектуальный помощник по документам и вопросам',
-                    0
+                    0,
+                    'sparkles',
                 )
             )
             conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', ('Сервисы',))
@@ -2844,13 +2891,17 @@ def add_resource():
     c_new = (request.form.get('category_new') or '').strip()
     c = c_new or c_existing or (request.form.get('category') or '').strip()
     d = request.form.get('desc')
+    icon = normalize_resource_icon(request.form.get('icon'))
     if not c:
         return jsonify(success=False, error='Укажите раздел'), 400
     gids = request.form.getlist('access_group_ids')
     conn = get_db_connection()
     try:
         cur = conn.cursor()
-        cur.execute("INSERT INTO resources (title, url, category, desc) VALUES (?, ?, ?, ?)", (t, u, c, d))
+        cur.execute(
+            "INSERT INTO resources (title, url, category, desc, icon) VALUES (?, ?, ?, ?, ?)",
+            (t, u, c, d, icon),
+        )
         cur.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (c,))
         rid = cur.lastrowid
         for gid in gids: cur.execute("INSERT INTO resource_group_access (resource_id, group_id) VALUES (?, ?)",
@@ -2872,12 +2923,16 @@ def edit_resource(res_id):
     c_new = (request.form.get('category_new') or '').strip()
     c = c_new or c_existing or (request.form.get('category') or '').strip()
     d = request.form.get('desc')
+    icon = normalize_resource_icon(request.form.get('icon'))
     if not c:
         return jsonify(success=False, error='Укажите раздел'), 400
     gids = request.form.getlist('access_group_ids')
     conn = get_db_connection()
     try:
-        conn.execute("UPDATE resources SET title=?, url=?, category=?, desc=? WHERE id=?", (t, u, c, d, res_id))
+        conn.execute(
+            "UPDATE resources SET title=?, url=?, category=?, desc=?, icon=? WHERE id=?",
+            (t, u, c, d, icon, res_id),
+        )
         conn.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (c,))
         conn.execute("DELETE FROM resource_group_access WHERE resource_id=?", (res_id,))
         for gid in gids: conn.execute("INSERT INTO resource_group_access (resource_id, group_id) VALUES (?, ?)",
@@ -3294,7 +3349,7 @@ def _build_access_export_payload(conn):
 
     res_rows = conn.execute(
         '''
-        SELECT r.id, r.title, r.url, r.category, r.desc, r.position,
+        SELECT r.id, r.title, r.url, r.category, r.desc, r.position, r.icon,
                GROUP_CONCAT(g.name) AS group_names
         FROM resources r
         LEFT JOIN resource_group_access ga ON ga.resource_id = r.id
@@ -3313,6 +3368,7 @@ def _build_access_export_payload(conn):
             'category': (row['category'] or '').strip(),
             'desc': row['desc'],
             'position': row['position'] if row['position'] is not None else 0,
+            'icon': normalize_resource_icon(row['icon']),
             'groups': gnames,
         })
 
@@ -3512,13 +3568,28 @@ def import_access_permissions():
             if row:
                 rid = row['id']
                 conn.execute(
-                    'UPDATE resources SET title = ?, url = ?, category = ?, desc = ?, position = ? WHERE id = ?',
-                    (res['title'], res['url'], res['category'], res['desc'], res['position'], rid),
+                    'UPDATE resources SET title = ?, url = ?, category = ?, desc = ?, position = ?, icon = ? WHERE id = ?',
+                    (
+                        res['title'],
+                        res['url'],
+                        res['category'],
+                        res['desc'],
+                        res['position'],
+                        normalize_resource_icon(res.get('icon')),
+                        rid,
+                    ),
                 )
             else:
                 cur = conn.execute(
-                    'INSERT INTO resources (title, url, category, desc, position) VALUES (?, ?, ?, ?, ?)',
-                    (res['title'], res['url'], res['category'], res['desc'], res['position']),
+                    'INSERT INTO resources (title, url, category, desc, position, icon) VALUES (?, ?, ?, ?, ?, ?)',
+                    (
+                        res['title'],
+                        res['url'],
+                        res['category'],
+                        res['desc'],
+                        res['position'],
+                        normalize_resource_icon(res.get('icon')),
+                    ),
                 )
                 rid = cur.lastrowid
             conn.execute('INSERT OR IGNORE INTO categories (name) VALUES (?)', (res['category'],))

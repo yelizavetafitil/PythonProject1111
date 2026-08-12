@@ -590,6 +590,43 @@
             border-color: transparent;
         }
 
+        .icon-picker {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 6px;
+            max-height: 176px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #f8fafc;
+        }
+        .icon-picker-btn {
+            border: 1px solid #dde7f5;
+            background: #fff;
+            border-radius: 8px;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            cursor: pointer;
+            min-height: 38px;
+            transition: all 0.15s ease;
+        }
+        .icon-picker-btn:hover {
+            border-color: #98b8e5;
+            background: #f4f8ff;
+        }
+        .icon-picker-btn.selected {
+            border-color: var(--primary);
+            background: #e9f0fb;
+            box-shadow: 0 0 0 2px rgba(28, 79, 156, 0.12);
+        }
+        @media (max-width: 575px) {
+            .icon-picker { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+        }
+
     </style>
 </head>
 <body class="portal-bg-fixed {{ 'is-admin' if can_manage_resources else '' }}">
@@ -657,6 +694,11 @@
     <div class="modal-body"><form id="addForm" novalidate>
         <div class="mb-3"><label class="small fw-bold text-muted mb-1">НАИМЕНОВАНИЕ РЕСУРСА</label><input type="text" name="title" class="form-control" placeholder="Например: Почта, CRM, Service Desk" required></div>
         <div class="mb-3">
+            <label class="small fw-bold text-muted mb-2">ИКОНКА</label>
+            <input type="hidden" name="icon" id="addIconValue" value="">
+            <div class="icon-picker" id="addIconPicker"></div>
+        </div>
+        <div class="mb-3">
             <label class="small fw-bold text-muted mb-1">РАЗДЕЛ</label>
             <div class="group-dropdown" id="addCategoryDropdown">
                 <button class="group-dropdown-btn" type="button" onclick="toggleCategoryDropdown('addCategoryDropdown')">
@@ -690,6 +732,11 @@
     <div class="modal-header"><h6 class="modal-title fw-bold">Редактирование ресурса</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
     <div class="modal-body"><form id="editForm" novalidate>
         <div class="mb-3"><label class="small fw-bold text-muted mb-1">НАИМЕНОВАНИЕ РЕСУРСА</label><input type="text" name="title" id="e_title" class="form-control" required></div>
+        <div class="mb-3">
+            <label class="small fw-bold text-muted mb-2">ИКОНКА</label>
+            <input type="hidden" name="icon" id="editIconValue" value="">
+            <div class="icon-picker" id="editIconPicker"></div>
+        </div>
         <div class="mb-3">
             <label class="small fw-bold text-muted mb-1">РАЗДЕЛ</label>
             <div class="group-dropdown" id="editCategoryDropdown">
@@ -739,8 +786,13 @@
 </div>
 {% endif %}
 
+<script src="https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 <script>
     function renderIcons() {
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+            return;
+        }
         const iconPaths = {
             search: '<circle cx="11" cy="11" r="7"></circle><line x1="16.65" y1="16.65" x2="21" y2="21"></line>',
             layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline>',
@@ -791,8 +843,141 @@
         '/gym-booking': 'dumbbell',
         '/knowledge-base': 'book',
         '/driver-trips': 'truck',
-        '/ai-assistant': 'book'
+        '/ai-assistant': 'sparkles'
     };
+
+    const RESOURCE_ICON_OPTIONS = [
+        { value: '', label: 'Авто', icon: 'layers' },
+        { value: 'globe', label: 'Сайт' },
+        { value: 'mail', label: 'Почта' },
+        { value: 'phone', label: 'Телефон' },
+        { value: 'calendar', label: 'Календарь' },
+        { value: 'calendar-check', label: 'Бронирование' },
+        { value: 'clipboard', label: 'Табель' },
+        { value: 'clipboard-list', label: 'Список' },
+        { value: 'book', label: 'Книга' },
+        { value: 'book-open', label: 'База знаний' },
+        { value: 'dumbbell', label: 'Спорт' },
+        { value: 'truck', label: 'Транспорт' },
+        { value: 'car', label: 'Авто' },
+        { value: 'bus', label: 'Автобус' },
+        { value: 'plane', label: 'Авиа' },
+        { value: 'train', label: 'Поезд' },
+        { value: 'bike', label: 'Велосипед' },
+        { value: 'map-pin', label: 'Адрес' },
+        { value: 'building', label: 'Здание' },
+        { value: 'home', label: 'Дом' },
+        { value: 'landmark', label: 'Банк' },
+        { value: 'users', label: 'Команда' },
+        { value: 'user', label: 'Пользователь' },
+        { value: 'user-check', label: 'Сотрудник' },
+        { value: 'shield', label: 'Безопасность' },
+        { value: 'lock', label: 'Доступ' },
+        { value: 'key', label: 'Ключ' },
+        { value: 'bell', label: 'Уведомления' },
+        { value: 'message-square', label: 'Сообщение' },
+        { value: 'messages-square', label: 'Чат' },
+        { value: 'inbox', label: 'Входящие' },
+        { value: 'send', label: 'Отправка' },
+        { value: 'link', label: 'Ссылка' },
+        { value: 'external-link', label: 'Внешняя ссылка' },
+        { value: 'download', label: 'Скачать' },
+        { value: 'upload', label: 'Загрузить' },
+        { value: 'database', label: 'База данных' },
+        { value: 'server', label: 'Сервер' },
+        { value: 'cloud', label: 'Облако' },
+        { value: 'wifi', label: 'Сеть' },
+        { value: 'monitor', label: 'Монитор' },
+        { value: 'smartphone', label: 'Телефон' },
+        { value: 'laptop', label: 'Ноутбук' },
+        { value: 'printer', label: 'Печать' },
+        { value: 'camera', label: 'Камера' },
+        { value: 'video', label: 'Видео' },
+        { value: 'image', label: 'Изображение' },
+        { value: 'music', label: 'Аудио' },
+        { value: 'mic', label: 'Микрофон' },
+        { value: 'headphones', label: 'Наушники' },
+        { value: 'wrench', label: 'Настройки' },
+        { value: 'settings', label: 'Параметры' },
+        { value: 'hammer', label: 'Инструменты' },
+        { value: 'briefcase', label: 'Бизнес' },
+        { value: 'graduation-cap', label: 'Обучение' },
+        { value: 'heart', label: 'Избранное' },
+        { value: 'star', label: 'Важное' },
+        { value: 'sparkles', label: 'ИИ' },
+        { value: 'zap', label: 'Быстро' },
+        { value: 'activity', label: 'Активность' },
+        { value: 'bar-chart', label: 'График' },
+        { value: 'pie-chart', label: 'Диаграмма' },
+        { value: 'line-chart', label: 'Аналитика' },
+        { value: 'calculator', label: 'Расчёт' },
+        { value: 'credit-card', label: 'Оплата' },
+        { value: 'wallet', label: 'Кошелёк' },
+        { value: 'shopping-cart', label: 'Заказы' },
+        { value: 'package', label: 'Поставки' },
+        { value: 'archive', label: 'Архив' },
+        { value: 'bookmark', label: 'Закладка' },
+        { value: 'tag', label: 'Метка' },
+        { value: 'flag', label: 'Флаг' },
+        { value: 'clock', label: 'Время' },
+        { value: 'timer', label: 'Таймер' },
+        { value: 'file', label: 'Файл' },
+        { value: 'file-text', label: 'Документ' },
+        { value: 'files', label: 'Файлы' },
+        { value: 'folder', label: 'Папка' },
+        { value: 'newspaper', label: 'Новости' },
+        { value: 'factory', label: 'Производство' },
+        { value: 'hard-hat', label: 'Стройка' },
+        { value: 'layout-dashboard', label: 'Панель' },
+        { value: 'grid', label: 'Сетка' },
+        { value: 'list', label: 'Перечень' },
+        { value: 'layers', label: 'Разделы' },
+    ];
+
+    function setResourceIconValue(hiddenInputId, containerId, value) {
+        const hidden = document.getElementById(hiddenInputId);
+        const container = document.getElementById(containerId);
+        if (!hidden || !container) return;
+        hidden.value = value || '';
+        container.querySelectorAll('.icon-picker-btn').forEach((btn) => {
+            btn.classList.toggle('selected', (btn.dataset.iconValue || '') === (value || ''));
+        });
+    }
+
+    function initIconPicker(containerId, hiddenInputId) {
+        const container = document.getElementById(containerId);
+        const hidden = document.getElementById(hiddenInputId);
+        if (!container || !hidden) return;
+        container.innerHTML = RESOURCE_ICON_OPTIONS.map((opt) => `
+            <button type="button" class="icon-picker-btn" title="${opt.label}" aria-label="${opt.label}"
+                data-icon-value="${opt.value}">
+                <i data-lucide="${opt.icon || opt.value || 'layers'}" size="18"></i>
+            </button>
+        `).join('');
+        if (!container.dataset.bound) {
+            container.addEventListener('click', (event) => {
+                const btn = event.target.closest('.icon-picker-btn');
+                if (!btn) return;
+                setResourceIconValue(hiddenInputId, containerId, btn.dataset.iconValue || '');
+            });
+            container.dataset.bound = '1';
+        }
+        setResourceIconValue(hiddenInputId, containerId, hidden.value || '');
+        renderIcons();
+    }
+
+    function resolveResourceIconName(item) {
+        if (item.icon) return item.icon;
+        return getResourceIconName(item);
+    }
+
+    function renderResourceIcon(item) {
+        const iconName = resolveResourceIconName(item);
+        if (iconName) {
+            return `<i data-lucide="${iconName}" size="20"></i>`;
+        }
+        return `<img src="${getIcon(item.url)}" class="tile-icon" onerror="this.src=DEFAULT_RESOURCE_ICON">`;
+    }
 
     function getResourceIconName(item) {
         try {
@@ -821,9 +1006,7 @@
                             ${canManageResources ? `<div class="admin-hud"><button type="button" class="hud-btn" onclick="openEdit(${item.id})"><i data-lucide="settings" size="13"></i></button><button type="button" class="hud-btn btn-delete" onclick="delItem(${item.id})"><i data-lucide="trash-2" size="13"></i></button></div>` : ''}
                             <a href="${item.url}" target="_blank" class="card-link">
                                 <div class="icon-container">
-                                    ${getResourceIconName(item)
-                                        ? `<i data-lucide="${getResourceIconName(item)}" size="20"></i>`
-                                        : `<img src="${getIcon(item.url)}" class="tile-icon" onerror="this.src=DEFAULT_RESOURCE_ICON">`}
+                                    ${renderResourceIcon(item)}
                                 </div>
                                 <div class="card-body">
                                     <h6 class="card-title">${item.title}</h6>
@@ -963,6 +1146,7 @@
         document.getElementById('e_title').value = item.title;
         document.getElementById('e_url').value = item.url;
         document.getElementById('e_desc').value = item.desc || '';
+        setResourceIconValue('editIconValue', 'editIconPicker', item.icon || '');
         const editOptions = document.getElementById('editCategoryOptions');
         const editNewInput = document.getElementById('editCategoryNew');
         if (editOptions) {
@@ -1040,6 +1224,7 @@
             const addOptions = document.getElementById('addCategoryOptions');
             if (addOptions) addOptions.innerHTML = categoryOptionsHtml('');
             setCategoryValue('add', '');
+            setResourceIconValue('addIconValue', 'addIconPicker', '');
             renderIcons();
         };
         document.getElementById('editForm').onsubmit = async (e) => {
@@ -1074,6 +1259,7 @@
             const addOptions = document.getElementById('addCategoryOptions');
             if (addOptions) addOptions.innerHTML = categoryOptionsHtml('');
             setCategoryValue('add', '');
+            setResourceIconValue('addIconValue', 'addIconPicker', '');
             document.getElementById('addGroupsDropdown').classList.remove('open');
             document.getElementById('addCategoryDropdown').classList.remove('open');
             renderIcons();
@@ -1088,6 +1274,7 @@
             const editOptions = document.getElementById('editCategoryOptions');
             if (editOptions) editOptions.innerHTML = categoryOptionsHtml('');
             setCategoryValue('edit', '');
+            setResourceIconValue('editIconValue', 'editIconPicker', '');
             document.getElementById('editGroupsDropdown').classList.remove('open');
             document.getElementById('editCategoryDropdown').classList.remove('open');
             renderIcons();
@@ -1223,6 +1410,10 @@
         initNbrbRatesWidget();
         await loadGroups();
         await loadCategories();
+        if (canManageResources) {
+            initIconPicker('addIconPicker', 'addIconValue');
+            initIconPicker('editIconPicker', 'editIconValue');
+        }
         loadResources();
     };
 </script>
