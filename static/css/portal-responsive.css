@@ -6,17 +6,32 @@ html {
     background-color: #081a48;
 }
 
+/*
+  Фон на fixed-слое относительно окна, а не высоты документа.
+  Иначе на длинных страницах (новости) background-size: cover «сжимает» картинку.
+*/
 body.portal-bg-fixed {
     min-height: 100vh;
     min-height: 100dvh;
-    background-color: #081a48;
-    background-attachment: scroll !important;
+    background-color: #081a48 !important;
+    background-image: none !important;
+    isolation: isolate;
 }
 
-@media (min-width: 992px) {
-    body.portal-bg-fixed {
-        background-attachment: fixed;
-    }
+body.portal-bg-fixed::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: #081a48;
+    background-image:
+        radial-gradient(circle at 50% 42%, rgba(130, 230, 255, 0.18) 0%, rgba(130, 230, 255, 0) 48%),
+        linear-gradient(180deg, rgba(8, 26, 72, 0.56) 0%, rgba(8, 26, 72, 0.66) 100%),
+        url("/assets/back4.png");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
 }
 
 /* Ширина и боковые отступы — как у .container (Bootstrap), класс container в разметке */

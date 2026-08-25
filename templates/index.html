@@ -171,110 +171,6 @@
             color: #b42318;
         }
 
-        .home-news-strip {
-            margin: 0 0 12px;
-            padding: 12px 14px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.72);
-            border: 1px solid rgba(205, 220, 243, 0.88);
-            backdrop-filter: blur(3px);
-            box-shadow: 0 8px 20px rgba(17, 46, 90, 0.08);
-        }
-        .home-news-head {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-bottom: 8px;
-        }
-        .home-news-title {
-            margin: 0;
-            font-weight: 700;
-            font-size: 12px;
-            color: #5a7090;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .home-news-all {
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--primary);
-            text-decoration: none;
-            white-space: nowrap;
-        }
-        .home-news-all:hover { color: var(--primary-soft); text-decoration: underline; }
-        .home-news-list {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
-        }
-        .home-news-item {
-            display: block;
-            background: #fff;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 12px;
-            text-decoration: none;
-            color: inherit;
-            min-height: 72px;
-            transition: all 0.15s ease;
-            cursor: pointer;
-            text-align: left;
-            width: 100%;
-        }
-        .home-news-modal-title {
-            font-size: 20px;
-            font-weight: 700;
-            color: #1e4f95;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-        }
-        .home-news-modal-body {
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-            line-height: 1.55;
-            font-size: 15px;
-            color: #24344f;
-        }
-        .home-news-modal-meta {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            font-size: 12px;
-            color: var(--muted-text);
-        }
-        .home-news-item:hover {
-            border-color: #98b8e5;
-            box-shadow: 0 10px 18px rgba(17, 46, 90, 0.1);
-            transform: translateY(-1px);
-        }
-        .home-news-item-title {
-            margin: 0 0 4px;
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text);
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-        .home-news-item-meta {
-            font-size: 11px;
-            color: var(--muted-text);
-        }
-        .home-news-empty {
-            font-size: 13px;
-            color: var(--muted-text);
-            padding: 4px 0;
-        }
-        @media (max-width: 991px) {
-            .home-news-list { grid-template-columns: 1fr; }
-        }
-
         #resourcesGrid {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -508,6 +404,60 @@
         .modal-content { border-radius: 12px; border: none; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); }
         .modal-header { border-bottom: 1px solid var(--border); padding: 20px 24px; }
         .modal-body { padding: 24px; }
+        .portal-alert-meta {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--muted-text);
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+        .portal-alert-title {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: #1e4f95;
+            line-height: 1.3;
+            overflow-wrap: anywhere;
+        }
+        .portal-alert-body {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.6;
+            font-size: 15px;
+            color: #24344f;
+        }
+        #portalAlertModal .modal-dialog {
+            width: calc(100% - 24px);
+            max-width: 720px;
+        }
+        #portalAlertModal .modal-content {
+            border: 0;
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 18px 40px rgba(17, 46, 90, 0.22);
+        }
+        #portalAlertModal .modal-header {
+            border-bottom: 1px solid var(--border);
+            background: #fff;
+            padding: 16px 20px 14px;
+        }
+        #portalAlertModal .modal-body {
+            padding: 16px 20px 8px;
+        }
+        #portalAlertModal .modal-footer {
+            border-top: 1px solid var(--border);
+            padding: 12px 20px 14px;
+            background: #fff;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+        #portalAlertModal .btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+            border-radius: 10px;
+            font-weight: 600;
+            padding: 8px 18px;
+        }
         .form-control, .form-select { border-radius: 8px; border: 1px solid var(--border); padding: 10px 12px; font-size: 14px; }
         .form-control:focus { border-color: var(--primary); box-shadow: none; }
         .btn-primary { background: var(--primary); border: none; border-radius: 8px; font-weight: 600; padding: 10px 20px; }
@@ -771,14 +721,6 @@
         <span class="search-icon-wrap" aria-hidden="true"><i data-lucide="search" size="18"></i></span>
         <input type="text" id="searchInput" class="search-bar" placeholder="Поиск сервисов и систем...">
     </div>
-    <section class="home-news-strip" aria-label="Новости предприятия">
-        <div class="home-news-head">
-            <h2 class="home-news-title"><i data-lucide="newspaper" size="14"></i> Новости предприятия</h2>
-            <a class="home-news-all" href="/news">Все новости →</a>
-        </div>
-        <div id="homeNewsList" class="home-news-list"></div>
-        <div id="homeNewsEmpty" class="home-news-empty d-none">Пока нет опубликованных новостей.</div>
-    </section>
     <div class="portal-body">
         <aside class="nbrb-rates-panel" aria-label="Курсы валют НБ РБ">
             <div class="nbrb-rates-header">
@@ -902,21 +844,20 @@
 </div>
 {% endif %}
 
-<div class="modal fade" id="homeNewsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+<div class="modal fade" id="portalAlertModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <div>
-                    <div class="home-news-modal-meta mb-1" id="homeNewsModalMeta"></div>
-                    <h2 class="modal-title home-news-modal-title" id="homeNewsModalTitle"></h2>
+            <div class="modal-header align-items-start">
+                <div class="me-2 flex-grow-1 min-w-0">
+                    <div class="portal-alert-meta" id="portalAlertMeta"></div>
+                    <h2 class="modal-title portal-alert-title" id="portalAlertTitle"></h2>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
             </div>
             <div class="modal-body">
-                <div class="home-news-modal-body" id="homeNewsModalBody"></div>
+                <div class="portal-alert-body" id="portalAlertBody"></div>
             </div>
-            <div class="modal-footer border-0 pt-0">
-                <a class="btn btn-outline-secondary" href="/news">Все новости</a>
+            <div class="modal-footer">
                 <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Закрыть</button>
             </div>
         </div>
@@ -1542,83 +1483,40 @@
         loadNbrbRates();
     }
 
-    function formatHomeNewsDate(value) {
-        if (!value) return '';
-        const date = new Date(String(value).replace(' ', 'T'));
-        if (Number.isNaN(date.getTime())) return String(value);
-        return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    }
-
-    function formatHomeNewsDateTime(value) {
-        if (!value) return '';
-        const date = new Date(String(value).replace(' ', 'T'));
-        if (Number.isNaN(date.getTime())) return String(value);
-        return date.toLocaleString('ru-RU', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }
-
-    let homeNewsItems = [];
-    let homeNewsModal = null;
-
-    function openHomeNews(id) {
-        const item = homeNewsItems.find((entry) => Number(entry.id) === Number(id));
-        if (!item) return;
-        document.getElementById('homeNewsModalTitle').textContent = item.title || '';
-        document.getElementById('homeNewsModalBody').textContent = String(item.body || '')
-            .replace(/\r\n/g, '\n')
-            .replace(/[ \t]+\n/g, '\n')
-            .replace(/\n{2,}/g, '\n')
-            .replace(/[ \t]{2,}/g, ' ')
-            .trim();
-        const pinned = item.is_pinned ? ' · закреплено' : '';
-        const author = item.author_display ? ` · ${item.author_display}` : '';
-        document.getElementById('homeNewsModalMeta').textContent =
-            `${formatHomeNewsDateTime(item.published_at || item.created_at)}${author}${pinned}`;
-        if (!homeNewsModal) {
-            homeNewsModal = new bootstrap.Modal(document.getElementById('homeNewsModal'));
-        }
-        homeNewsModal.show();
-    }
-
-    async function loadHomeNews() {
-        const list = document.getElementById('homeNewsList');
-        const empty = document.getElementById('homeNewsEmpty');
-        if (!list || !empty) return;
+    async function loadPortalAlertPopup() {
         try {
-            const items = await fetch('/api/news?limit=3').then((r) => r.json());
-            if (!Array.isArray(items) || !items.length) {
-                homeNewsItems = [];
-                list.innerHTML = '';
-                empty.classList.remove('d-none');
-                return;
+            const item = await fetch('/api/portal-alert').then((r) => r.json());
+            if (!item || !item.has_content || !item.is_enabled) return;
+
+            const metaBits = [];
+            if (item.updated_at) {
+                const date = new Date(String(item.updated_at).replace(' ', 'T'));
+                metaBits.push(Number.isNaN(date.getTime())
+                    ? String(item.updated_at)
+                    : date.toLocaleString('ru-RU', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                    }));
             }
-            homeNewsItems = items;
-            empty.classList.add('d-none');
-            list.innerHTML = items.map((item) => `
-                <button type="button" class="home-news-item" data-news-id="${item.id}">
-                    <div class="home-news-item-title">${escapeHtml(item.title || '')}</div>
-                    <div class="home-news-item-meta">${escapeHtml(formatHomeNewsDate(item.published_at || item.created_at))}${item.is_pinned ? ' · закреплено' : ''}</div>
-                </button>
-            `).join('');
-            list.querySelectorAll('[data-news-id]').forEach((btn) => {
-                btn.addEventListener('click', () => openHomeNews(btn.dataset.newsId));
-            });
+            if (item.updated_by_display || item.updated_by) {
+                metaBits.push(item.updated_by_display || item.updated_by);
+            }
+            if (!metaBits.length) metaBits.push('Предупреждение портала');
+            document.getElementById('portalAlertMeta').textContent = metaBits.join(' · ');
+            document.getElementById('portalAlertTitle').textContent = item.title || 'Предупреждение';
+            document.getElementById('portalAlertBody').textContent = item.body || '';
+
+            const modalEl = document.getElementById('portalAlertModal');
+            const modal = new bootstrap.Modal(modalEl);
+            modal.show();
         } catch (e) {
-            list.innerHTML = '';
-            empty.classList.remove('d-none');
-            empty.textContent = 'Не удалось загрузить новости.';
+            /* ignore alert load errors */
         }
     }
 
     window.onload = async () => {
         initConfirmModal();
         initNbrbRatesWidget();
-        loadHomeNews();
         await loadGroups();
         await loadCategories();
         if (canManageResources) {
@@ -1626,6 +1524,9 @@
             initIconPicker('editIconPicker', 'editIconValue');
         }
         loadResources();
+        if ({{ 'true' if show_portal_alert else 'false' }}) {
+            loadPortalAlertPopup();
+        }
     };
 </script>
 </body>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Новости предприятия | РУП Белнипиэнергопром</title>
+    <title>Новости | РУП Белнипиэнергопром</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,20 +27,31 @@
             background-position: center;
             background-repeat: no-repeat;
             background-attachment: fixed;
-            font-family: "Inter", sans-serif;
+            font-family: 'Inter', sans-serif;
             color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
         }
         .navbar {
-            background: #fff;
+            background: #ffffff;
             border-bottom: 1px solid var(--border);
+            backdrop-filter: none;
             padding: 12px 0;
             position: sticky;
             top: 0;
             z-index: 1000;
             box-shadow: 0 2px 10px rgba(20, 42, 75, 0.06);
         }
-        .logo img { height: 40px; width: auto; display: block; }
-        .topbar-actions { display: flex; align-items: center; gap: 10px; }
+        .logo { text-decoration: none; display: flex; align-items: center; justify-content: flex-start; }
+        .logo img {
+            width: auto;
+            max-width: 100%;
+            max-height: 40px;
+            height: auto;
+            display: block;
+            object-fit: contain;
+            object-position: left center;
+        }
         .topbar-user { font-size: 15px; color: #4d678b; margin-right: 4px; }
         .topbar-btn {
             height: 40px;
@@ -67,7 +78,13 @@
         .btn-primary:hover { background: var(--primary-soft); border-color: var(--primary-soft); }
         .btn-light { background: var(--primary); border-color: var(--primary); color: #fff; }
         .btn-light:hover { background: var(--primary-soft); border-color: var(--primary-soft); color: #fff; }
-        .main-container { margin: 0 auto; padding: 26px 0 34px; }
+
+        .main-container {
+            margin: 0 auto;
+            padding: 26px 0 34px;
+            position: relative;
+            width: 100%;
+        }
         .panel {
             background: rgba(255, 255, 255, 0.84);
             border: 1px solid rgba(205, 220, 243, 0.88);
@@ -75,16 +92,6 @@
             backdrop-filter: blur(3px);
             box-shadow: var(--card-shadow);
             padding: 18px;
-        }
-        .news-layout {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
-            gap: 12px;
-            align-items: start;
-        }
-        .news-layout.single { grid-template-columns: 1fr; }
-        @media (max-width: 991px) {
-            .news-layout { grid-template-columns: 1fr; }
         }
         .hero-row {
             display: flex;
@@ -97,18 +104,77 @@
         }
         .hero-title { margin: 0; font-size: 20px; font-weight: 700; color: #1e4f95; }
         .hero-subtitle { margin: 6px 0 0; color: #5e7798; font-size: 14px; }
-        .news-list { display: grid; gap: 10px; }
+
+        .news-feed { display: grid; gap: 14px; }
         .news-card {
+            display: grid;
+            grid-template-columns: 200px minmax(0, 1fr);
+            gap: 14px;
+            align-items: stretch;
+            width: 100%;
+            text-align: left;
             background: #fff;
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 12px 14px;
+            border-radius: 12px;
+            padding: 12px;
             cursor: pointer;
             transition: all 0.15s ease;
         }
-        .news-card:hover, .news-card.active {
+        .news-card:hover {
             border-color: #98b8e5;
             box-shadow: 0 10px 18px rgba(17, 46, 90, 0.1);
+            transform: translateY(-1px);
+        }
+        .news-card.is-featured {
+            grid-template-columns: minmax(280px, 1.05fr) minmax(0, 1fr);
+            gap: 0;
+            padding: 0;
+            overflow: hidden;
+            border: 1px solid rgba(28, 79, 156, 0.22);
+            box-shadow: 0 14px 34px rgba(17, 46, 90, 0.14);
+            background:
+                linear-gradient(135deg, rgba(28, 79, 156, 0.06) 0%, rgba(255, 255, 255, 0) 42%),
+                #fff;
+        }
+        .news-card.is-featured:hover {
+            border-color: rgba(28, 79, 156, 0.38);
+            box-shadow: 0 18px 40px rgba(17, 46, 90, 0.18);
+            transform: translateY(-2px);
+        }
+        .news-card.is-featured.no-image {
+            grid-template-columns: 1fr;
+            padding: 22px 24px;
+        }
+        .news-card.no-image { grid-template-columns: 1fr; }
+        .news-card-media {
+            border-radius: 10px;
+            overflow: hidden;
+            background: linear-gradient(135deg, #d9e6f8, #eef4ff);
+            min-height: 128px;
+            height: 100%;
+        }
+        .news-card.is-featured .news-card-media {
+            border-radius: 0;
+            min-height: 280px;
+            position: relative;
+        }
+        .news-card.is-featured .news-card-media::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent 55%, rgba(255, 255, 255, 0.12) 100%);
+            pointer-events: none;
+        }
+        .news-card-media img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .news-card-body { display: flex; flex-direction: column; min-width: 0; }
+        .news-card.is-featured .news-card-body {
+            justify-content: center;
+            padding: 22px 24px 24px;
         }
         .news-card-meta {
             display: flex;
@@ -117,6 +183,11 @@
             align-items: center;
             font-size: 12px;
             color: var(--muted-text);
+            margin-bottom: 6px;
+        }
+        .news-card.is-featured .news-card-meta {
+            margin-bottom: 10px;
+            font-size: 13px;
         }
         .news-badge {
             display: inline-flex;
@@ -129,89 +200,210 @@
             color: #1c4f9c;
         }
         .news-badge.draft { background: #fff4e5; color: #9a6700; }
+        .news-badge.lead {
+            background: linear-gradient(180deg, #2a65c0 0%, #1c4f9c 100%);
+            color: #fff;
+            padding: 3px 10px;
+            letter-spacing: 0.02em;
+        }
+        .news-card-title {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+        .news-card.is-featured .news-card-title {
+            font-size: clamp(22px, 2.4vw, 28px);
+            line-height: 1.22;
+            letter-spacing: -0.02em;
+            color: #143a78;
+        }
+        .news-card:hover .news-card-title { color: var(--primary); }
         .news-preview {
             margin: 8px 0 0;
             font-size: 13px;
             color: #5a7090;
+            line-height: 1.5;
             display: -webkit-box;
-            -webkit-line-clamp: 2;
+            -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
         }
-        #newsEditorPanel {
-            width: 100%;
-            min-width: 0;
-        }
-        #newsTitle {
-            width: 100%;
-            min-height: 72px;
-            resize: vertical;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-            line-height: 1.4;
-        }
-        #newsBody {
-            width: 100%;
-            min-height: 240px;
-            resize: vertical;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-        }
-        .news-card-title {
-            margin: 0 0 6px;
+        .news-card.is-featured .news-preview {
+            -webkit-line-clamp: 5;
             font-size: 15px;
-            font-weight: 600;
-            color: var(--text);
-            overflow-wrap: anywhere;
-            word-break: break-word;
-        }
-        .news-detail-title {
-            margin: 0 0 8px;
-            font-size: 22px;
-            font-weight: 700;
-            color: #1e4f95;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-        }
-        .news-detail-body {
-            margin-top: 14px;
-            white-space: pre-wrap;
             line-height: 1.55;
-            font-size: 15px;
-            color: #24344f;
+            color: #3f5675;
+            margin-top: 12px;
+            max-width: 38rem;
         }
+        .news-readmore {
+            margin-top: 14px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--primary);
+            opacity: 0.85;
+        }
+        .news-card.is-featured .news-readmore { opacity: 1; }
+        .news-card:hover .news-readmore { text-decoration: underline; }
         .news-empty {
-            padding: 28px 12px;
+            padding: 36px 12px;
             text-align: center;
             color: var(--muted-text);
             font-size: 14px;
         }
-        .form-control, .form-check-input {
-            border-radius: 8px;
-            border-color: var(--border);
+
+        .modal-content {
+            border: 0;
+            border-radius: 14px;
         }
-        .form-control:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(20, 64, 128, 0.14);
+        #newsEditorModal.modal,
+        #newsViewModal.modal {
+            overflow-y: hidden !important;
         }
-        .editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        #newsEditorModal .modal-dialog,
+        #newsViewModal .modal-dialog {
+            width: calc(100% - 24px);
+            max-width: 920px;
+            margin: 12px auto;
+            height: calc(100dvh - 24px);
+            max-height: calc(100dvh - 24px);
+            display: flex;
+            align-items: center;
+        }
+        #newsEditorModal .modal-content,
+        #newsViewModal .modal-content {
+            width: 100%;
+            max-height: calc(100dvh - 24px);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #newsEditorModal .modal-header,
+        #newsViewModal .modal-header {
+            flex: 0 0 auto;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        #newsEditorModal .modal-body,
+        #newsViewModal .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding: 16px 20px;
+        }
+        #newsEditorModal .modal-footer,
+        #newsViewModal .modal-footer {
+            flex: 0 0 auto;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px 20px 14px;
+            border-top: 1px solid var(--border);
+            background: #fff;
+            z-index: 2;
+        }
+        #newsEditorModal .form-check {
+            margin-top: 4px;
+            margin-bottom: 0;
+        }
+        .main-hint {
+            margin: 6px 0 0;
+            font-size: 12px;
+            color: var(--muted-text);
+            line-height: 1.4;
+        }
         .news-modal-title {
             font-size: 20px;
             font-weight: 700;
             color: #1e4f95;
             overflow-wrap: anywhere;
-            word-break: break-word;
+            line-height: 1.3;
+        }
+        .news-modal-image {
+            width: 100%;
+            max-height: 220px;
+            object-fit: cover;
+            border-radius: 12px;
+            margin-bottom: 14px;
+            background: #eef4ff;
         }
         .news-modal-body-text {
             white-space: pre-wrap;
             overflow-wrap: anywhere;
-            word-break: break-word;
-            line-height: 1.55;
+            line-height: 1.6;
             font-size: 15px;
             color: #24344f;
+        }
+        #newsTitle, #newsBody {
+            width: 100%;
+            border-radius: 8px;
+            border-color: var(--border);
+            resize: vertical;
+        }
+        #newsTitle { min-height: 42px; max-height: 88px; font-weight: 600; }
+        #newsBody { min-height: 96px; max-height: 150px; }
+        .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(20, 64, 128, 0.14);
+        }
+        .image-picker {
+            border: 1px dashed #b7cae6;
+            border-radius: 10px;
+            padding: 10px;
+            background: #f7faff;
+        }
+        .image-preview-wrap {
+            position: relative;
+            margin-top: 8px;
+            display: none;
+        }
+        .image-preview-wrap.has-image { display: block; }
+        .image-preview {
+            width: 160px;
+            max-width: 100%;
+            height: 96px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .image-preview-actions { margin-top: 8px; }
+
+        @media (max-width: 700px) {
+            .news-card,
+            .news-card.is-featured {
+                grid-template-columns: 1fr;
+            }
+            .news-card-media {
+                min-height: 150px;
+                height: 150px;
+            }
+            .news-card.is-featured .news-card-media {
+                min-height: 200px;
+                height: 200px;
+            }
+            .news-card.is-featured .news-card-body {
+                padding: 16px;
+            }
+            .news-card.is-featured .news-card-title {
+                font-size: 20px;
+            }
+            #newsEditorModal .modal-dialog,
+            #newsViewModal .modal-dialog {
+                margin: 8px auto;
+                height: calc(100dvh - 16px);
+                max-height: calc(100dvh - 16px);
+                align-items: stretch;
+            }
+            #newsEditorModal .modal-content,
+            #newsViewModal .modal-content {
+                max-height: calc(100dvh - 16px);
+                height: 100%;
+            }
         }
     </style>
 </head>
@@ -228,76 +420,107 @@
 </nav>
 
 <div class="container main-container">
-    <div class="news-layout {% if not can_manage_news %}single{% endif %}" id="newsLayout">
-        <section class="panel">
-            <div class="hero-row">
-                <div>
-                    <h1 class="hero-title">Новости предприятия</h1>
-                    <p class="hero-subtitle">Объявления и события РУП «Белнипиэнергопром»</p>
-                </div>
-                {% if can_manage_news %}
-                <button type="button" class="btn btn-primary btn-sm" id="newNewsBtn">+ Новость</button>
-                {% endif %}
+    <section class="panel">
+        <div class="hero-row">
+            <div>
+                <h1 class="hero-title">Новости предприятия</h1>
+                <p class="hero-subtitle">События и объявления РУП «Белнипиэнергопром»</p>
             </div>
-            <div id="newsList" class="news-list"></div>
-            <div id="newsEmpty" class="news-empty d-none">Пока нет опубликованных новостей.</div>
-        </section>
+            {% if can_manage_news %}
+            <button type="button" class="btn btn-primary btn-sm topbar-btn" id="newNewsBtn">+ Новость</button>
+            {% endif %}
+        </div>
+        <div id="newsList" class="news-feed"></div>
+        <div id="newsEmpty" class="news-empty d-none">Пока нет опубликованных новостей.</div>
+    </section>
+</div>
 
-        {% if can_manage_news %}
-        <aside class="panel" id="newsEditorPanel">
-            <h2 class="hero-title" style="font-size: 16px;" id="editorTitle">Новая новость</h2>
-            <form id="newsForm" class="mt-3">
-                <input type="hidden" id="newsId" value="">
-                <div class="mb-3">
-                    <label class="small fw-bold text-muted mb-1">ЗАГОЛОВОК</label>
-                    <textarea id="newsTitle" class="form-control" maxlength="200" rows="2" required></textarea>
+<div class="modal fade" id="newsViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="me-2">
+                    <div class="news-card-meta mb-1" id="modalMeta"></div>
+                    <h2 class="modal-title news-modal-title" id="modalTitle"></h2>
                 </div>
-                <div class="mb-3">
-                    <label class="small fw-bold text-muted mb-1">ТЕКСТ</label>
-                    <textarea id="newsBody" class="form-control" rows="10" required></textarea>
-                </div>
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="newsPinned">
-                    <label class="form-check-label" for="newsPinned">Закрепить сверху</label>
-                </div>
-                <div class="editor-actions">
-                    <button type="submit" class="btn btn-primary btn-sm" id="saveNewsBtn">Сохранить</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="deleteNewsBtn">Удалить</button>
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="resetNewsBtn">Сброс</button>
-                </div>
-            </form>
-        </aside>
-        {% endif %}
-    </div>
-
-    <div class="modal fade" id="newsViewModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div>
-                        <div class="news-card-meta mb-1" id="modalMeta"></div>
-                        <h2 class="modal-title news-modal-title" id="modalTitle"></h2>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="news-modal-body-text" id="modalBody"></div>
-                </div>
-                <div class="modal-footer border-0 pt-0">
-                    {% if can_manage_news %}
-                    <button type="button" class="btn btn-outline-secondary" id="modalEditBtn">Редактировать</button>
-                    {% endif %}
-                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Закрыть</button>
-                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <img id="modalImage" class="news-modal-image d-none" alt="">
+                <div class="news-modal-body-text" id="modalBody"></div>
+            </div>
+            <div class="modal-footer">
+                {% if can_manage_news %}
+                <button type="button" class="btn btn-outline-secondary" id="modalEditBtn">Редактировать</button>
+                {% endif %}
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Закрыть</button>
             </div>
         </div>
     </div>
 </div>
 
+{% if can_manage_news %}
+<div class="modal fade" id="newsEditorModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fw-bold fs-5" id="editorTitle">Новая новость</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newsForm">
+                    <input type="hidden" id="newsId" value="">
+                    <div class="mb-3">
+                        <label class="small fw-bold text-muted mb-1" for="newsTitle">ЗАГОЛОВОК</label>
+                        <textarea id="newsTitle" class="form-control" maxlength="200" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold text-muted mb-1" for="newsBody">ТЕКСТ</label>
+                        <textarea id="newsBody" class="form-control" rows="5" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small fw-bold text-muted mb-1" for="newsImage">ФОТО</label>
+                        <div class="image-picker">
+                            <input type="file" id="newsImage" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                            <div class="form-text mt-1">JPG, PNG, WEBP или GIF до 5 МБ</div>
+                            <div class="image-preview-wrap" id="imagePreviewWrap">
+                                <img id="imagePreview" class="image-preview" alt="Превью">
+                                <div class="image-preview-actions">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm" id="clearImageBtn">Убрать фото</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="newsMain">
+                        <label class="form-check-label" for="newsMain">Сделать главной</label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="newsPinned">
+                        <label class="form-check-label" for="newsPinned">Закрепить сверху</label>
+                    </div>
+                    <p class="main-hint">Главная одна — крупный блок в начале ленты. Закреплённые идут сразу после неё (их может быть несколько).</p>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary d-none me-auto" id="deleteNewsBtn">Удалить</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="submit" class="btn btn-primary" id="saveNewsBtn" form="newsForm">Опубликовать</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <script>
     const canManageNews = {{ 'true' if can_manage_news else 'false' }};
     let newsItems = [];
-    let selectedId = null;
+    let modalNewsId = null;
+    let newsViewModal = null;
+    let newsEditorModal = null;
+    let currentImageUrl = null;
+    let clearImageFlag = false;
+    let previewObjectUrl = null;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -310,8 +533,18 @@
 
     function formatNewsDate(value) {
         if (!value) return "";
-        const normalized = String(value).replace(" ", "T");
-        const date = new Date(normalized);
+        const date = new Date(String(value).replace(" ", "T"));
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleDateString("ru-RU", {
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+        });
+    }
+
+    function formatNewsDateTime(value) {
+        if (!value) return "";
+        const date = new Date(String(value).replace(" ", "T"));
         if (Number.isNaN(date.getTime())) return String(value);
         return date.toLocaleString("ru-RU", {
             day: "2-digit",
@@ -326,7 +559,7 @@
         return String(value || "")
             .replace(/\r\n/g, "\n")
             .replace(/[ \t]+\n/g, "\n")
-            .replace(/\n{2,}/g, "\n")
+            .replace(/\n{3,}/g, "\n\n")
             .replace(/[ \t]{2,}/g, " ")
             .trim();
     }
@@ -336,13 +569,7 @@
     }
 
     async function requestJson(url, options = {}) {
-        const response = await fetch(url, {
-            ...options,
-            headers: {
-                ...(options.headers || {}),
-                ...(options.body ? { "Content-Type": "application/json" } : {})
-            }
-        });
+        const response = await fetch(url, options);
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             throw new Error(data.error || "Ошибка запроса");
@@ -357,41 +584,59 @@
             list.innerHTML = "";
             empty.classList.remove("d-none");
             empty.textContent = canManageNews
-                ? "Новостей пока нет. Создайте первую справа."
+                ? "Новостей пока нет. Нажмите «+ Новость», чтобы опубликовать первую."
                 : "Пока нет опубликованных новостей.";
             return;
         }
         empty.classList.add("d-none");
-        list.innerHTML = newsItems.map((item) => `
-            <article class="news-card ${selectedId === item.id ? "active" : ""}" data-id="${item.id}">
-                <h3 class="news-card-title">${escapeHtml(item.title)}</h3>
-                <div class="news-card-meta">
-                    <span>${escapeHtml(formatNewsDate(item.published_at || item.created_at))}</span>
-                    ${item.author_display ? `<span>${escapeHtml(item.author_display)}</span>` : ""}
-                    ${item.is_pinned ? '<span class="news-badge">Закреплено</span>' : ""}
-                    ${!item.is_published ? '<span class="news-badge draft">Черновик</span>' : ""}
+        const featuredId = (newsItems.find((item) => item.is_main) || newsItems[0]).id;
+        list.innerHTML = newsItems.map((item) => {
+            const featured = item.id === featuredId;
+            const hasImage = !!item.image_url;
+            const badges = [];
+            if (item.is_main) badges.push('<span class="news-badge lead">Главное</span>');
+            if (item.is_pinned && !item.is_main) badges.push('<span class="news-badge">Закреплено</span>');
+            if (!item.is_published) badges.push('<span class="news-badge draft">Черновик</span>');
+            return `
+            <button type="button" class="news-card ${featured ? "is-featured" : ""} ${hasImage ? "" : "no-image"}" data-id="${item.id}">
+                ${hasImage ? `<div class="news-card-media"><img src="${escapeHtml(item.image_url)}" alt="" loading="lazy"></div>` : ""}
+                <div class="news-card-body">
+                    <div class="news-card-meta">
+                        ${badges.join("")}
+                        <span>${escapeHtml(formatNewsDate(item.published_at || item.created_at))}</span>
+                        ${item.author_display ? `<span>· ${escapeHtml(item.author_display)}</span>` : ""}
+                    </div>
+                    <h2 class="news-card-title">${escapeHtml(item.title)}</h2>
+                    <p class="news-preview">${escapeHtml(previewText(item.body))}</p>
+                    ${featured ? '<div class="news-readmore">Читать полностью →</div>' : ""}
                 </div>
-                <p class="news-preview">${escapeHtml(previewText(item.body))}</p>
-            </article>
-        `).join("");
+            </button>`;
+        }).join("");
         list.querySelectorAll(".news-card").forEach((card) => {
             card.addEventListener("click", () => openNews(Number(card.dataset.id)));
         });
     }
 
-    let newsViewModal = null;
-    let modalNewsId = null;
-
     function showNewsModal(item) {
         modalNewsId = item.id;
         document.getElementById("modalTitle").textContent = item.title || "";
         document.getElementById("modalBody").textContent = normalizeNewsText(item.body);
+        const img = document.getElementById("modalImage");
+        if (item.image_url) {
+            img.src = item.image_url;
+            img.alt = item.title || "";
+            img.classList.remove("d-none");
+        } else {
+            img.removeAttribute("src");
+            img.classList.add("d-none");
+        }
         const badges = [];
-        if (item.is_pinned) badges.push('<span class="news-badge">Закреплено</span>');
+        if (item.is_main) badges.push('<span class="news-badge lead">Главное</span>');
+        if (item.is_pinned && !item.is_main) badges.push('<span class="news-badge">Закреплено</span>');
         if (!item.is_published) badges.push('<span class="news-badge draft">Черновик</span>');
         document.getElementById("modalMeta").innerHTML = `
-            <span>${escapeHtml(formatNewsDate(item.published_at || item.created_at))}</span>
-            ${item.author_display ? `<span>${escapeHtml(item.author_display)}</span>` : ""}
+            <span>${escapeHtml(formatNewsDateTime(item.published_at || item.created_at))}</span>
+            ${item.author_display ? `<span>· ${escapeHtml(item.author_display)}</span>` : ""}
             ${badges.join("")}
         `;
         if (!newsViewModal) {
@@ -400,34 +645,71 @@
         newsViewModal.show();
     }
 
-    function resetEditor() {
-        selectedId = null;
-        document.getElementById("newsId").value = "";
-        document.getElementById("newsTitle").value = "";
-        document.getElementById("newsBody").value = "";
-        document.getElementById("newsPinned").checked = false;
-        document.getElementById("editorTitle").textContent = "Новая новость";
-        document.getElementById("deleteNewsBtn").classList.add("d-none");
-        renderList();
-    }
-
-    function fillEditor(item) {
-        selectedId = item.id;
-        document.getElementById("newsId").value = String(item.id);
-        document.getElementById("newsTitle").value = item.title || "";
-        document.getElementById("newsBody").value = item.body || "";
-        document.getElementById("newsPinned").checked = !!item.is_pinned;
-        document.getElementById("editorTitle").textContent = "Редактирование";
-        document.getElementById("deleteNewsBtn").classList.remove("d-none");
-        renderList();
-    }
-
     function openNews(id) {
         const item = newsItems.find((entry) => entry.id === id);
         if (!item) return;
-        selectedId = id;
-        renderList();
         showNewsModal(item);
+    }
+
+    function revokePreviewUrl() {
+        if (previewObjectUrl) {
+            URL.revokeObjectURL(previewObjectUrl);
+            previewObjectUrl = null;
+        }
+    }
+
+    function setImagePreview(url) {
+        const wrap = document.getElementById("imagePreviewWrap");
+        const img = document.getElementById("imagePreview");
+        if (url) {
+            img.src = url;
+            wrap.classList.add("has-image");
+        } else {
+            img.removeAttribute("src");
+            wrap.classList.remove("has-image");
+        }
+    }
+
+    function resetEditor() {
+        document.getElementById("newsId").value = "";
+        document.getElementById("newsTitle").value = "";
+        document.getElementById("newsBody").value = "";
+        document.getElementById("newsMain").checked = false;
+        document.getElementById("newsPinned").checked = false;
+        document.getElementById("newsImage").value = "";
+        document.getElementById("editorTitle").textContent = "Новая новость";
+        document.getElementById("deleteNewsBtn").classList.add("d-none");
+        document.getElementById("saveNewsBtn").textContent = "Опубликовать";
+        currentImageUrl = null;
+        clearImageFlag = false;
+        revokePreviewUrl();
+        setImagePreview(null);
+    }
+
+    function fillEditor(item) {
+        document.getElementById("newsId").value = String(item.id);
+        document.getElementById("newsTitle").value = item.title || "";
+        document.getElementById("newsBody").value = item.body || "";
+        document.getElementById("newsMain").checked = !!item.is_main;
+        document.getElementById("newsPinned").checked = !!item.is_pinned;
+        document.getElementById("newsImage").value = "";
+        document.getElementById("editorTitle").textContent = "Редактирование новости";
+        document.getElementById("deleteNewsBtn").classList.remove("d-none");
+        document.getElementById("saveNewsBtn").textContent = "Сохранить";
+        currentImageUrl = item.image_url || null;
+        clearImageFlag = false;
+        revokePreviewUrl();
+        setImagePreview(currentImageUrl);
+    }
+
+    function openEditor(item) {
+        if (!newsEditorModal) {
+            newsEditorModal = new bootstrap.Modal(document.getElementById("newsEditorModal"));
+        }
+        if (item) fillEditor(item);
+        else resetEditor();
+        newsEditorModal.show();
+        setTimeout(() => document.getElementById("newsTitle").focus(), 250);
     }
 
     async function loadNews() {
@@ -440,40 +722,53 @@
     }
 
     if (canManageNews) {
+        document.getElementById("newNewsBtn").addEventListener("click", () => openEditor(null));
         document.getElementById("modalEditBtn").addEventListener("click", () => {
             const item = newsItems.find((entry) => entry.id === modalNewsId);
-            if (item) fillEditor(item);
             if (newsViewModal) newsViewModal.hide();
-            document.getElementById("newsEditorPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+            if (item) openEditor(item);
         });
-        document.getElementById("newNewsBtn").addEventListener("click", () => {
-            resetEditor();
-            document.getElementById("newsTitle").focus();
+        document.getElementById("newsImage").addEventListener("change", (event) => {
+            const file = event.target.files && event.target.files[0];
+            clearImageFlag = false;
+            revokePreviewUrl();
+            if (!file) {
+                setImagePreview(currentImageUrl);
+                return;
+            }
+            previewObjectUrl = URL.createObjectURL(file);
+            setImagePreview(previewObjectUrl);
         });
-        document.getElementById("resetNewsBtn").addEventListener("click", resetEditor);
+        document.getElementById("clearImageBtn").addEventListener("click", () => {
+            document.getElementById("newsImage").value = "";
+            currentImageUrl = null;
+            clearImageFlag = true;
+            revokePreviewUrl();
+            setImagePreview(null);
+        });
         document.getElementById("newsForm").addEventListener("submit", async (event) => {
             event.preventDefault();
-            const payload = {
-                title: document.getElementById("newsTitle").value.trim(),
-                body: normalizeNewsText(document.getElementById("newsBody").value),
-                is_pinned: document.getElementById("newsPinned").checked,
-                is_published: true
-            };
+            const formData = new FormData();
+            formData.append("title", document.getElementById("newsTitle").value.trim());
+            formData.append("body", normalizeNewsText(document.getElementById("newsBody").value));
+            formData.append("is_main", document.getElementById("newsMain").checked ? "1" : "0");
+            formData.append("is_pinned", document.getElementById("newsPinned").checked ? "1" : "0");
+            formData.append("is_published", "1");
+            if (clearImageFlag) formData.append("clear_image", "1");
+            if (currentImageUrl && !clearImageFlag) formData.append("image_url", currentImageUrl);
+            const fileInput = document.getElementById("newsImage");
+            if (fileInput.files && fileInput.files[0]) {
+                formData.append("image", fileInput.files[0]);
+            }
             try {
                 const newsId = document.getElementById("newsId").value;
                 if (newsId) {
-                    await requestJson(`/api/news/${newsId}`, {
-                        method: "PUT",
-                        body: JSON.stringify(payload)
-                    });
+                    await requestJson(`/api/news/${newsId}`, { method: "PUT", body: formData });
                 } else {
-                    await requestJson("/api/news", {
-                        method: "POST",
-                        body: JSON.stringify(payload)
-                    });
+                    await requestJson("/api/news", { method: "POST", body: formData });
                 }
+                if (newsEditorModal) newsEditorModal.hide();
                 await loadNews();
-                resetEditor();
             } catch (error) {
                 alert(error.message || "Не удалось сохранить");
             }
@@ -484,8 +779,8 @@
             if (!confirm("Удалить эту новость?")) return;
             try {
                 await requestJson(`/api/news/${newsId}`, { method: "DELETE" });
+                if (newsEditorModal) newsEditorModal.hide();
                 await loadNews();
-                resetEditor();
             } catch (error) {
                 alert(error.message || "Не удалось удалить");
             }

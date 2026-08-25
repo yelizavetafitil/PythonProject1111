@@ -26,6 +26,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import date as date_type
 from zoneinfo import ZoneInfo
+import uuid
 from flask import (
     Flask,
     Response,
@@ -38,6 +39,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.utils import secure_filename
 import pandas as pd
 import openpyxl
 try:
@@ -128,6 +130,10 @@ def normalize_resource_icon(raw_value):
         return ''
     return name if name in ALLOWED_RESOURCE_ICONS else ''
 LOGO_FILENAME = 'image2_hq.png'
+NEWS_UPLOAD_DIR = os.path.join(app.root_path, 'static', 'uploads', 'news')
+NEWS_UPLOAD_URL_PREFIX = '/static/uploads/news/'
+NEWS_ALLOWED_IMAGE_EXT = frozenset({'.jpg', '.jpeg', '.png', '.webp', '.gif'})
+NEWS_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 PHONEBOOK_PATH = 'phonebook.xlsx'
 PHONEBOOK_COLUMNS = ['dept', 'pos', 'surname', 'name', 'work', 'home', 'mobile']
 MAIL_DOMAIN = 'energoprom.by'
@@ -1021,10 +1027,12 @@ def _serialize_news_row(row):
         return None
     item = dict(row)
     item['is_pinned'] = bool(item.get('is_pinned'))
+    item['is_main'] = bool(item.get('is_main'))
     item['is_published'] = bool(item.get('is_published'))
+    item['image_url'] = (item.get('image_url') or '').strip() or None
     body = (item.get('body') or '').replace('\r\n', '\n')
     body = re.sub(r'[ \t]+\n', '\n', body)
-    body = re.sub(r'\n{2,}', '\n', body)
+    body = re.sub(r'\n{3,}', '\n\n', body)
     body = re.sub(r'[ \t]{2,}', ' ', body)
     item['body'] = body.strip()
     return item
@@ -1032,6 +1040,163 @@ def _serialize_news_row(row):
 
 def _news_now_str():
     return datetime.now(APP_TZ).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _ensure_news_upload_dir():
+    os.makedirs(NEWS_UPLOAD_DIR, exist_ok=True)
+
+
+def _normalize_news_image_url(raw_value):
+    value = (raw_value or '').strip()
+    if not value:
+        return None
+    if value.startswith(NEWS_UPLOAD_URL_PREFIX):
+        name = value[len(NEWS_UPLOAD_URL_PREFIX):].lstrip('/')
+        if not name or '/' in name or '\\' in name or '..' in name:
+            return None
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in NEWS_ALLOWED_IMAGE_EXT:
+            return None
+        full = os.path.join(NEWS_UPLOAD_DIR, name)
+        if not os.path.isfile(full):
+            return None
+        return NEWS_UPLOAD_URL_PREFIX + name
+    parsed = urlparse(value)
+    if parsed.scheme in ('http', 'https') and parsed.netloc:
+        return value
+    return None
+
+
+def _delete_news_image_file(image_url):
+    value = (image_url or '').strip()
+    if not value.startswith(NEWS_UPLOAD_URL_PREFIX):
+        return
+    name = value[len(NEWS_UPLOAD_URL_PREFIX):].lstrip('/')
+    if not name or '/' in name or '\\' in name or '..' in name:
+        return
+    if name.startswith('seed_'):
+        return
+    full = os.path.join(NEWS_UPLOAD_DIR, name)
+    try:
+        if os.path.isfile(full):
+            os.remove(full)
+    except OSError:
+        pass
+
+
+def _save_news_image_file(file_storage):
+    if not file_storage or not getattr(file_storage, 'filename', None):
+        return None, None
+    filename = secure_filename(file_storage.filename or '')
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in NEWS_ALLOWED_IMAGE_EXT:
+        return None, 'Допустимы JPG, PNG, WEBP или GIF'
+    file_storage.stream.seek(0, os.SEEK_END)
+    size = file_storage.stream.tell()
+    file_storage.stream.seek(0)
+    if size <= 0:
+        return None, 'Пустой файл изображения'
+    if size > NEWS_MAX_IMAGE_BYTES:
+        return None, 'Размер фото не больше 5 МБ'
+    _ensure_news_upload_dir()
+    stored_name = f'{uuid.uuid4().hex}{ext}'
+    target = os.path.join(NEWS_UPLOAD_DIR, stored_name)
+    file_storage.save(target)
+    return NEWS_UPLOAD_URL_PREFIX + stored_name, None
+
+
+def _news_request_fields():
+    """Parse news fields from JSON or multipart form."""
+    is_multipart = bool(request.content_type and 'multipart/form-data' in request.content_type)
+    if is_multipart:
+        title = (request.form.get('title') or '').strip()
+        body = (request.form.get('body') or '').strip()
+        is_pinned = str(request.form.get('is_pinned') or '').lower() in ('1', 'true', 'yes', 'on')
+        is_main = str(request.form.get('is_main') or '').lower() in ('1', 'true', 'yes', 'on')
+        is_published = str(request.form.get('is_published') or '1').lower() not in ('0', 'false', 'no')
+        clear_image = str(request.form.get('clear_image') or '').lower() in ('1', 'true', 'yes', 'on')
+        image_url_provided = 'image_url' in request.form
+        image_url = (request.form.get('image_url') or '').strip() or None
+        image_file = request.files.get('image')
+    else:
+        data = request.json or {}
+        title = (data.get('title') or '').strip()
+        body = (data.get('body') or '').strip()
+        is_pinned = bool(data.get('is_pinned'))
+        is_main = bool(data.get('is_main'))
+        is_published = False if data.get('is_published') is False else True
+        clear_image = bool(data.get('clear_image'))
+        image_url_provided = 'image_url' in data
+        image_url = (data.get('image_url') or '').strip() or None
+        image_file = None
+    return {
+        'title': title,
+        'body': body,
+        'is_pinned': is_pinned,
+        'is_main': is_main,
+        'is_published': is_published,
+        'clear_image': clear_image,
+        'image_url': image_url,
+        'image_url_provided': image_url_provided,
+        'image_file': image_file,
+    }
+
+
+def _resolve_news_image_url(fields, previous_url=None):
+    previous_url = (previous_url or '').strip() or None
+    if fields.get('image_file') and getattr(fields['image_file'], 'filename', None):
+        saved, err = _save_news_image_file(fields['image_file'])
+        if err:
+            return None, err
+        if previous_url and previous_url != saved:
+            _delete_news_image_file(previous_url)
+        return saved, None
+    if fields.get('clear_image'):
+        if previous_url:
+            _delete_news_image_file(previous_url)
+        return None, None
+    if fields.get('image_url_provided'):
+        raw = fields.get('image_url')
+        if not raw:
+            return previous_url, None
+        normalized = _normalize_news_image_url(raw)
+        if not normalized:
+            return None, 'Некорректная ссылка или файл изображения'
+        if previous_url and normalized != previous_url:
+            if previous_url.startswith(NEWS_UPLOAD_URL_PREFIX) and not normalized.startswith(NEWS_UPLOAD_URL_PREFIX):
+                _delete_news_image_file(previous_url)
+        return normalized, None
+    return previous_url, None
+
+
+def _seed_news_body_from_file(slug, fallback):
+    path = os.path.join(NEWS_UPLOAD_DIR, f'{slug}.txt')
+    if os.path.isfile(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as fh:
+                text = fh.read().strip()
+            if text:
+                return text
+        except OSError:
+            pass
+    return fallback
+
+
+def _seed_news_image_url(slug):
+    for ext in ('.jpg', '.jpeg', '.png', '.webp'):
+        name = f'{slug}{ext}'
+        if os.path.isfile(os.path.join(NEWS_UPLOAD_DIR, name)):
+            return NEWS_UPLOAD_URL_PREFIX + name
+    return None
+
+
+def _set_exclusive_main_news(conn, news_id):
+    """Only one news item can be the main story at a time."""
+    conn.execute('UPDATE portal_news SET is_main = 0 WHERE is_main != 0')
+    conn.execute(
+        'UPDATE portal_news SET is_main = 1, updated_at = ? WHERE id = ?',
+        (_news_now_str(), news_id),
+    )
 
 
 def _build_ai_sso_url(username, display_name):
@@ -1383,62 +1548,139 @@ def init_db():
                 body TEXT NOT NULL,
                 author_username TEXT NOT NULL,
                 author_display TEXT,
+                image_url TEXT,
+                is_main INTEGER NOT NULL DEFAULT 0,
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 is_published INTEGER NOT NULL DEFAULT 1,
                 published_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )''')
-        news_count = conn.execute('SELECT COUNT(*) AS cnt FROM portal_news').fetchone()['cnt']
-        if news_count == 0:
+        news_cols = {row['name'] for row in conn.execute('PRAGMA table_info(portal_news)').fetchall()}
+        if 'image_url' not in news_cols:
+            conn.execute('ALTER TABLE portal_news ADD COLUMN image_url TEXT')
+        if 'is_main' not in news_cols:
+            conn.execute('ALTER TABLE portal_news ADD COLUMN is_main INTEGER NOT NULL DEFAULT 0')
+            conn.execute(
+                '''
+                UPDATE portal_news
+                SET is_main = 1
+                WHERE id = (
+                    SELECT id FROM portal_news
+                    WHERE is_pinned = 1
+                    ORDER BY COALESCE(published_at, created_at) DESC, id DESC
+                    LIMIT 1
+                )
+                '''
+            )
+            conn.execute('UPDATE portal_news SET is_pinned = 0 WHERE is_main = 1')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS portal_alert (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                title TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL DEFAULT '',
+                is_enabled INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT,
+                updated_by TEXT,
+                updated_by_display TEXT
+            )''')
+        if not conn.execute('SELECT id FROM portal_alert WHERE id = 1').fetchone():
+            conn.execute(
+                '''
+                INSERT INTO portal_alert (id, title, body, is_enabled, updated_at)
+                VALUES (1, '', '', 0, ?)
+                ''',
+                (_news_now_str(),),
+            )
+        _ensure_news_upload_dir()
+        seeded_with_images = conn.execute(
+            '''
+            SELECT COUNT(*) AS cnt FROM portal_news
+            WHERE author_username = 'system'
+              AND image_url LIKE '/static/uploads/news/seed_%'
+            '''
+        ).fetchone()['cnt']
+        if seeded_with_images < 6:
+            conn.execute('DELETE FROM portal_news')
             now = datetime.now(APP_TZ)
             sample_news = [
                 (
-                    'Запуск внутреннего портала РУП «Белнипиэнергопром»',
-                    'Открыт единый корпоративный портал: сервисы, справочники и полезные ресурсы собраны в одном месте.\n\nЧерез главную страницу доступны бронирование переговорок, табель, телефонный справочник и другие разделы.',
+                    'seed_youth',
+                    'Будущее РУП «Белнипиэнергопром»: открытый диалог с молодыми специалистами',
+                    '19 августа 2026 года состоялась встреча директора предприятия Виктора Юшкевича с молодыми специалистами предприятия.\n\n'
+                    'Встреча прошла в формате «открытого диалога». Виктор Владимирович рассказал о планах развития и ключевых целях предприятия, '
+                    'а руководство пообещало поддержку в адаптации молодых специалистов.',
                     True,
                     0,
                 ),
                 (
-                    'Обновлён регламент бронирования переговорок',
-                    'Просим заранее указывать тему встречи и участников из AD.\n\nПри необходимости администратор может перенести или отменить чужую бронь. История изменений сохраняется.',
+                    'seed_pellets',
+                    'Авторский надзор: котельная на топливных пеллетах на ТЭЦ-5',
+                    'Продолжается работа на объекте реконструкции пускорезервной котельной филиала «ТЭЦ-5» РУП «Минскэнерго» '
+                    'с возведением котельной на топливных пеллетах.\n\n'
+                    'Специалисты АСО и ОПОС провели авторский надзор на площадке Минской ТЭЦ-5.',
                     False,
                     1,
                 ),
                 (
-                    'Напоминание по охране труда',
-                    'Напоминаем о необходимости соблюдать требования по охране труда на рабочих местах и в производственных помещениях.\n\nАктуальные инструкции доступны в разделе «База знаний».',
+                    'seed_eco',
+                    'Экологическая культура — ответственность каждого',
+                    '20 августа 2026 года в рамках Единого дня информирования состоялась диалоговая площадка '
+                    '«Экологическая культура – ответственность каждого».\n\n'
+                    'Спикером выступил Виктор Владимирович Ермоленков, кандидат наук, доцент Академии управления при Президенте Республики Беларусь.',
                     False,
                     2,
                 ),
                 (
-                    'График работы спортзала',
-                    'Бронирование спортзала доступно через отдельный сервис на портале.\n\nПросим освобождать площадку вовремя и отменять бронь, если планы изменились.',
+                    'seed_forum',
+                    'Районный молодежный форум «Московский Старт»',
+                    '19 августа 2026 года работники РУП «Белнипиэнергопром» приняли участие в районном молодежном форуме «Московский Старт».\n\n'
+                    'Мероприятие прошло на базе КТУП «Минский метрополитен» и включало экскурсию и диалоговую площадку.',
                     False,
                     3,
                 ),
                 (
-                    'Сервис водителей: заявки на выезд',
-                    'Для командировок и выездов за пределы г. Минска используйте сервис водителей.\n\nУказывайте маршрут, время выезда и контакты ответственного сотрудника.',
+                    'seed_fish',
+                    'Рыболовный турнир и атмосфера единства',
+                    'Руководство и профсоюзный комитет организовали рыболовный турнир на озере экологического парка «Акварель».\n\n'
+                    'Победители соревнований «Рыбалка-2026» награждены дипломами и подарками.',
                     False,
                     4,
                 ),
+                (
+                    'seed_anticor',
+                    'Заседание комиссии по противодействию коррупции',
+                    '24 августа 2026 года под председательством директора Виктора Владимировича Юшкевича '
+                    'состоялось заседание комиссии по противодействию коррупции.\n\n'
+                    'В повестке — рассмотрение доклада Министра энергетики Д. Р. Мороза.',
+                    False,
+                    5,
+                ),
             ]
-            for title, body, pinned, day_offset in sample_news:
+            for slug, title, fallback_body, is_main, day_offset in sample_news:
+                body = _seed_news_body_from_file(slug, fallback_body)
+                title_compact = re.sub(r'\s+', ' ', title).casefold()
+                body_head = re.sub(r'\s+', ' ', body[:280]).casefold()
+                if title_compact[:48] and title_compact[:48] in body_head:
+                    parts = re.split(r'\n\s*\n', body, maxsplit=1)
+                    if len(parts) == 2 and len(parts[0]) <= len(title) + 60:
+                        body = parts[1].strip()
+                image_url = _seed_news_image_url(slug)
                 stamp = (now - timedelta(days=day_offset)).strftime('%Y-%m-%d %H:%M:%S')
                 conn.execute(
                     '''
                     INSERT INTO portal_news (
-                        title, body, author_username, author_display,
-                        is_pinned, is_published, published_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                        title, body, author_username, author_display, image_url,
+                        is_main, is_pinned, is_published, published_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
                     ''',
                     (
                         title,
                         body,
                         'system',
-                        'Администрация портала',
-                        1 if pinned else 0,
+                        'Белнипиэнергопром',
+                        image_url,
+                        1 if is_main else 0,
                         stamp,
                         stamp,
                         stamp,
@@ -1650,11 +1892,13 @@ def index():
     username = session.get('username')
     is_admin = username in MASTER_ADMINS
     can_manage_resources_flag = can_manage_resources(username)
+    show_portal_alert = bool(session.pop('show_portal_alert', False))
     return render_template(
         'index.html',
         is_admin=is_admin,
         can_manage_resources=can_manage_resources_flag,
-        user=username
+        user=username,
+        show_portal_alert=show_portal_alert,
     )
 
 
@@ -1672,6 +1916,7 @@ def login_page():
     if ok:
         session['logged_in'] = True
         session['username'] = u
+        session['show_portal_alert'] = True
         conn = get_db_connection()
         try:
             add_user_to_default_group(conn, u)
@@ -1721,14 +1966,14 @@ def get_portal_news():
     conn = get_db_connection()
     try:
         query = '''
-            SELECT id, title, body, author_username, author_display,
-                   is_pinned, is_published, published_at, created_at, updated_at
+            SELECT id, title, body, author_username, author_display, image_url,
+                   is_main, is_pinned, is_published, published_at, created_at, updated_at
             FROM portal_news
         '''
         params = []
         if not include_drafts:
             query += ' WHERE is_published = 1'
-        query += ' ORDER BY is_pinned DESC, COALESCE(published_at, created_at) DESC, id DESC'
+        query += ' ORDER BY is_main DESC, is_pinned DESC, COALESCE(published_at, created_at) DESC, id DESC'
         if limit > 0:
             query += ' LIMIT ?'
             params.append(limit)
@@ -1746,8 +1991,8 @@ def get_portal_news_item(news_id):
     try:
         row = conn.execute(
             '''
-            SELECT id, title, body, author_username, author_display,
-                   is_pinned, is_published, published_at, created_at, updated_at
+            SELECT id, title, body, author_username, author_display, image_url,
+                   is_main, is_pinned, is_published, published_at, created_at, updated_at
             FROM portal_news WHERE id = ?
             ''',
             (news_id,),
@@ -1766,15 +2011,19 @@ def get_portal_news_item(news_id):
 def create_portal_news():
     if not can_manage_news(session.get('username')):
         return jsonify(success=False, error='Недостаточно прав'), 403
-    data = request.json or {}
-    title = (data.get('title') or '').strip()
-    body = (data.get('body') or '').strip()
-    is_pinned = 1 if data.get('is_pinned') else 0
-    is_published = 0 if data.get('is_published') is False else 1
+    fields = _news_request_fields()
+    title = fields['title']
+    body = fields['body']
+    is_pinned = 1 if fields['is_pinned'] else 0
+    is_main = 1 if fields['is_main'] else 0
+    is_published = 1 if fields['is_published'] else 0
     if not title:
         return jsonify(success=False, error='Укажите заголовок'), 400
     if not body:
         return jsonify(success=False, error='Укажите текст новости'), 400
+    image_url, image_err = _resolve_news_image_url(fields, previous_url=None)
+    if image_err:
+        return jsonify(success=False, error=image_err), 400
     username = session.get('username')
     display = (session.get('display_name') or username or '').strip()
     now = _news_now_str()
@@ -1784,18 +2033,20 @@ def create_portal_news():
         cur = conn.execute(
             '''
             INSERT INTO portal_news (
-                title, body, author_username, author_display,
-                is_pinned, is_published, published_at, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                title, body, author_username, author_display, image_url,
+                is_main, is_pinned, is_published, published_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''',
-            (title, body, username, display, is_pinned, is_published, published_at, now, now),
+            (title, body, username, display, image_url, 0, is_pinned, is_published, published_at, now, now),
         )
         news_id = cur.lastrowid
+        if is_main:
+            _set_exclusive_main_news(conn, news_id)
         conn.commit()
         row = conn.execute(
             '''
-            SELECT id, title, body, author_username, author_display,
-                   is_pinned, is_published, published_at, created_at, updated_at
+            SELECT id, title, body, author_username, author_display, image_url,
+                   is_main, is_pinned, is_published, published_at, created_at, updated_at
             FROM portal_news WHERE id = ?
             ''',
             (news_id,),
@@ -1809,11 +2060,12 @@ def create_portal_news():
 def update_portal_news(news_id):
     if not can_manage_news(session.get('username')):
         return jsonify(success=False, error='Недостаточно прав'), 403
-    data = request.json or {}
-    title = (data.get('title') or '').strip()
-    body = (data.get('body') or '').strip()
-    is_pinned = 1 if data.get('is_pinned') else 0
-    is_published = 0 if data.get('is_published') is False else 1
+    fields = _news_request_fields()
+    title = fields['title']
+    body = fields['body']
+    is_pinned = 1 if fields['is_pinned'] else 0
+    is_main = 1 if fields['is_main'] else 0
+    is_published = 1 if fields['is_published'] else 0
     if not title:
         return jsonify(success=False, error='Укажите заголовок'), 400
     if not body:
@@ -1821,11 +2073,14 @@ def update_portal_news(news_id):
     conn = get_db_connection()
     try:
         existing = conn.execute(
-            'SELECT id, is_published, published_at FROM portal_news WHERE id = ?',
+            'SELECT id, is_published, published_at, image_url FROM portal_news WHERE id = ?',
             (news_id,),
         ).fetchone()
         if not existing:
             return jsonify(success=False, error='Новость не найдена'), 404
+        image_url, image_err = _resolve_news_image_url(fields, previous_url=existing['image_url'])
+        if image_err:
+            return jsonify(success=False, error=image_err), 400
         now = _news_now_str()
         published_at = existing['published_at']
         if is_published and not existing['is_published']:
@@ -1835,17 +2090,24 @@ def update_portal_news(news_id):
         conn.execute(
             '''
             UPDATE portal_news
-            SET title = ?, body = ?, is_pinned = ?, is_published = ?,
+            SET title = ?, body = ?, image_url = ?, is_main = ?, is_pinned = ?, is_published = ?,
                 published_at = ?, updated_at = ?
             WHERE id = ?
             ''',
-            (title, body, is_pinned, is_published, published_at, now, news_id),
+            (title, body, image_url, is_main, is_pinned, is_published, published_at, now, news_id),
         )
+        if is_main:
+            _set_exclusive_main_news(conn, news_id)
+        else:
+            conn.execute(
+                'UPDATE portal_news SET is_main = 0, updated_at = ? WHERE id = ?',
+                (now, news_id),
+            )
         conn.commit()
         row = conn.execute(
             '''
-            SELECT id, title, body, author_username, author_display,
-                   is_pinned, is_published, published_at, created_at, updated_at
+            SELECT id, title, body, author_username, author_display, image_url,
+                   is_main, is_pinned, is_published, published_at, created_at, updated_at
             FROM portal_news WHERE id = ?
             ''',
             (news_id,),
@@ -1861,12 +2123,107 @@ def delete_portal_news(news_id):
         return jsonify(success=False, error='Недостаточно прав'), 403
     conn = get_db_connection()
     try:
-        existing = conn.execute('SELECT id FROM portal_news WHERE id = ?', (news_id,)).fetchone()
+        existing = conn.execute(
+            'SELECT id, image_url FROM portal_news WHERE id = ?',
+            (news_id,),
+        ).fetchone()
         if not existing:
             return jsonify(success=False, error='Новость не найдена'), 404
         conn.execute('DELETE FROM portal_news WHERE id = ?', (news_id,))
         conn.commit()
+        _delete_news_image_file(existing['image_url'])
         return jsonify(success=True)
+    finally:
+        conn.close()
+
+
+def _serialize_portal_alert(row):
+    if not row:
+        return {
+            'title': '',
+            'body': '',
+            'is_enabled': False,
+            'updated_at': None,
+            'updated_by': None,
+            'updated_by_display': None,
+            'has_content': False,
+        }
+    title = (row['title'] or '').strip()
+    body = (row['body'] or '').strip()
+    return {
+        'title': title,
+        'body': body,
+        'is_enabled': bool(row['is_enabled']),
+        'updated_at': row['updated_at'],
+        'updated_by': row['updated_by'],
+        'updated_by_display': row['updated_by_display'],
+        'has_content': bool(title or body),
+    }
+
+
+@app.route('/api/portal-alert')
+def get_portal_alert():
+    if not session.get('logged_in'):
+        return jsonify(success=False), 403
+    manage = request.args.get('manage') == '1'
+    if manage and not _is_master_admin(session.get('username')):
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            '''
+            SELECT title, body, is_enabled, updated_at, updated_by, updated_by_display
+            FROM portal_alert WHERE id = 1
+            '''
+        ).fetchone()
+        item = _serialize_portal_alert(row)
+        if manage:
+            return jsonify(item)
+        # Public popup: only when enabled and not empty
+        if item['is_enabled'] and item['has_content']:
+            return jsonify(item)
+        return jsonify(None)
+    finally:
+        conn.close()
+
+
+@app.route('/api/portal-alert', methods=['PUT'])
+def update_portal_alert():
+    if not _is_master_admin(session.get('username')):
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    body = (data.get('body') or '').strip()
+    is_enabled = 1 if data.get('is_enabled') else 0
+    if is_enabled and not title and not body:
+        return jsonify(success=False, error='Укажите заголовок или текст предупреждения'), 400
+    username = session.get('username')
+    display = (session.get('display_name') or username or '').strip()
+    now = _news_now_str()
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            '''
+            INSERT INTO portal_alert (id, title, body, is_enabled, updated_at, updated_by, updated_by_display)
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                body = excluded.body,
+                is_enabled = excluded.is_enabled,
+                updated_at = excluded.updated_at,
+                updated_by = excluded.updated_by,
+                updated_by_display = excluded.updated_by_display
+            ''',
+            (title, body, is_enabled, now, username, display),
+        )
+        conn.commit()
+        row = conn.execute(
+            '''
+            SELECT title, body, is_enabled, updated_at, updated_by, updated_by_display
+            FROM portal_alert WHERE id = 1
+            '''
+        ).fetchone()
+        return jsonify(success=True, item=_serialize_portal_alert(row))
     finally:
         conn.close()
 

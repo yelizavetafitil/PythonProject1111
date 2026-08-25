@@ -136,6 +136,78 @@
             box-shadow: var(--card-shadow);
             min-width: 0;
         }
+        .alert-admin-tile .alert-icon {
+            background: #eef4ff;
+            border-color: #cfe0f7;
+            color: var(--primary);
+        }
+        .alert-admin-fields {
+            display: grid;
+            gap: 12px;
+        }
+        .alert-field-label {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            color: #5a7090;
+            margin-bottom: 5px;
+        }
+        .alert-admin-fields .form-control {
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-size: 13px;
+            padding: 9px 12px;
+            background: #fff;
+        }
+        .alert-admin-fields textarea.form-control {
+            min-height: 96px;
+            resize: vertical;
+        }
+        .alert-admin-fields .form-control:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(28, 79, 156, 0.14);
+        }
+        .alert-admin-fields .form-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-height: auto;
+            padding: 0;
+            margin: 0;
+        }
+        .alert-admin-fields .form-check-input {
+            width: 16px;
+            height: 16px;
+            margin: 0;
+            border-color: #98b0d0;
+            cursor: pointer;
+        }
+        .alert-admin-fields .form-check-input:checked {
+            background-color: var(--primary);
+            border-color: var(--primary);
+        }
+        .alert-admin-fields .form-check-label {
+            font-size: 13px;
+            color: var(--text);
+            cursor: pointer;
+        }
+        .alert-admin-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            border-top: 1px solid #e7eef8;
+            margin-top: 2px;
+            padding-top: 12px;
+        }
+        .alert-admin-status {
+            flex: 1 1 160px;
+            font-size: 12px;
+            color: var(--muted-text);
+            line-height: 1.35;
+        }
+        .alert-admin-status.is-error { color: #b42318; }
         .admin-tile-head {
             display: flex;
             align-items: flex-start;
@@ -457,6 +529,38 @@
         </section>
 
         <section class="category-group">
+            <div class="category-header"><i data-lucide="alert-triangle" size="14"></i> Всплывающее предупреждение</div>
+            <div class="admin-tile alert-admin-tile">
+                <div class="admin-tile-head">
+                    <div class="icon-container alert-icon"><i data-lucide="megaphone" size="18"></i></div>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="card-title">Сообщение при входе</div>
+                        <div class="card-desc">Показывается на главной. Если выключено или пустое — окно не появляется.</div>
+                    </div>
+                </div>
+                <div class="alert-admin-fields">
+                    <div>
+                        <label class="alert-field-label" for="alertTitle">ЗАГОЛОВОК</label>
+                        <input type="text" id="alertTitle" class="form-control form-control-sm" maxlength="200" placeholder="Например: Технические работы">
+                    </div>
+                    <div>
+                        <label class="alert-field-label" for="alertBody">ТЕКСТ</label>
+                        <textarea id="alertBody" class="form-control form-control-sm" rows="4" placeholder="Описание: недоступность серверов, сроки работ и т.д."></textarea>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" id="alertEnabled">
+                        <label class="form-check-label" for="alertEnabled">Показывать при входе на портал</label>
+                    </div>
+                    <div class="alert-admin-actions">
+                        <button type="button" class="btn btn-primary btn-sm btn-action px-3" onclick="savePortalAlert()">Сохранить</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm btn-action px-3" onclick="clearPortalAlert()">Очистить и скрыть</button>
+                        <div id="alertStatus" class="alert-admin-status"></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="category-group">
             <div class="category-header"><i data-lucide="users" size="14"></i> Группы доступа</div>
             <div class="groups-actions">
                 <input type="text" id="gn" class="form-control form-control-sm" placeholder="Название группы">
@@ -644,7 +748,9 @@
             download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
             upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>',
             database: '<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path>',
-            newspaper: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path>'
+            newspaper: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path>',
+            'alert-triangle': '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>',
+            megaphone: '<path d="m3 11 18-5v12L3 13v-2z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path>'
         };
         document.querySelectorAll('[data-lucide]').forEach((el) => {
             const name = el.getAttribute('data-lucide');
@@ -1350,6 +1456,66 @@
         await loadNewsAccess();
     }
 
+    function setAlertStatus(text, isError) {
+        const el = document.getElementById('alertStatus');
+        if (!el) return;
+        el.textContent = text || '';
+        el.classList.toggle('is-error', !!isError);
+    }
+
+    async function loadPortalAlert() {
+        try {
+            const item = await fetch('/api/portal-alert?manage=1').then((r) => r.json());
+            document.getElementById('alertTitle').value = item.title || '';
+            document.getElementById('alertBody').value = item.body || '';
+            document.getElementById('alertEnabled').checked = !!item.is_enabled;
+            if (item.updated_at) {
+                const who = item.updated_by_display || item.updated_by || '';
+                setAlertStatus(`Обновлено: ${item.updated_at}${who ? ' · ' + who : ''}`);
+            } else {
+                setAlertStatus('Пока не настроено');
+            }
+        } catch (e) {
+            setAlertStatus('Не удалось загрузить предупреждение', true);
+        }
+    }
+
+    async function savePortalAlert() {
+        const payload = {
+            title: document.getElementById('alertTitle').value.trim(),
+            body: document.getElementById('alertBody').value.trim(),
+            is_enabled: document.getElementById('alertEnabled').checked
+        };
+        try {
+            const response = await fetch('/api/portal-alert', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                setAlertStatus(data.error || 'Ошибка сохранения', true);
+                return;
+            }
+            const item = data.item || {};
+            document.getElementById('alertTitle').value = item.title || '';
+            document.getElementById('alertBody').value = item.body || '';
+            document.getElementById('alertEnabled').checked = !!item.is_enabled;
+            const who = item.updated_by_display || item.updated_by || '';
+            setAlertStatus(`Сохранено: ${item.updated_at || ''}${who ? ' · ' + who : ''}`);
+        } catch (e) {
+            setAlertStatus('Не удалось сохранить', true);
+        }
+    }
+
+    async function clearPortalAlert() {
+        if (!confirm('Очистить текст и скрыть всплывающее окно?')) return;
+        document.getElementById('alertTitle').value = '';
+        document.getElementById('alertBody').value = '';
+        document.getElementById('alertEnabled').checked = false;
+        await savePortalAlert();
+    }
+
     window.onload = async () => {
         initConfirmDeleteModal();
         initAdminConfirmModal();
@@ -1361,6 +1527,7 @@
         await loadResourceAccess();
         await loadAiAccess();
         await loadNewsAccess();
+        await loadPortalAlert();
     };
 </script>
 </body>
