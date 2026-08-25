@@ -474,7 +474,7 @@
                         <div class="icon-container"><i data-lucide="shield" size="18"></i></div>
                         <div class="flex-grow-1 min-w-0">
                             <div class="card-title">Телефонная книга</div>
-                            <div class="card-desc">Полные номера сотрудников</div>
+                            <div class="card-desc">Вход + полные личные номера</div>
                         </div>
                     </div>
                     <div class="ad-search-box">
@@ -491,7 +491,7 @@
                         <div class="icon-container"><i data-lucide="clipboard" size="18"></i></div>
                         <div class="flex-grow-1 min-w-0">
                             <div class="card-title">Табель</div>
-                            <div class="card-desc">Мониторинг статусов</div>
+                            <div class="card-desc">Вход на страницу табеля</div>
                         </div>
                     </div>
                     <div class="ad-search-box">
@@ -508,7 +508,7 @@
                         <div class="icon-container"><i data-lucide="calendar-check" size="18"></i></div>
                         <div class="flex-grow-1 min-w-0">
                             <div class="card-title">Бронирование</div>
-                            <div class="card-desc">Правка чужих броней</div>
+                            <div class="card-desc">Вход + правка чужих броней/рейсов</div>
                         </div>
                     </div>
                     <div class="ad-search-box">
@@ -542,7 +542,7 @@
                         <div class="icon-container"><i data-lucide="sparkles" size="18"></i></div>
                         <div class="flex-grow-1 min-w-0">
                             <div class="card-title">БелнипиAI</div>
-                            <div class="card-desc">Доступ к ассистенту</div>
+                            <div class="card-desc">Вход к ассистенту</div>
                         </div>
                     </div>
                     <div class="ad-search-box">
@@ -552,6 +552,23 @@
                     <div id="aiAccessSearchResults" class="ad-results-list"></div>
                     <div class="admin-chip-label">Добавлено</div>
                     <div id="aiAccessList" class="member-list"></div>
+                </div>
+
+                <div class="admin-tile">
+                    <div class="admin-tile-head">
+                        <div class="icon-container"><i data-lucide="newspaper" size="18"></i></div>
+                        <div class="flex-grow-1 min-w-0">
+                            <div class="card-title">Новости</div>
+                            <div class="card-desc">Редактирование ленты</div>
+                        </div>
+                    </div>
+                    <div class="ad-search-box">
+                        <span class="ad-search-icon"><i data-lucide="search" size="16"></i></span>
+                        <input type="text" id="newsAccessSearch" class="form-control ad-search-input" placeholder="Поиск в AD..." oninput="searchNewsAccessAD()">
+                    </div>
+                    <div id="newsAccessSearchResults" class="ad-results-list"></div>
+                    <div class="admin-chip-label">Добавлено</div>
+                    <div id="newsAccessList" class="member-list"></div>
                 </div>
             </div>
         </section>
@@ -626,7 +643,8 @@
             layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline>',
             download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>',
             upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line>',
-            database: '<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path>'
+            database: '<ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5V19A9 3 0 0 0 21 19V5"></path><path d="M3 12A9 3 0 0 0 21 12"></path>',
+            newspaper: '<path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path>'
         };
         document.querySelectorAll('[data-lucide]').forEach((el) => {
             const name = el.getAttribute('data-lucide');
@@ -644,6 +662,7 @@
     let bookingAccessState = [];
     let resourceAccessState = [];
     let aiAccessState = [];
+    let newsAccessState = [];
     let confirmDeleteModal;
     let confirmDeleteResolver = null;
     let adminConfirmModal;
@@ -1272,6 +1291,65 @@
         await loadAiAccess();
     }
 
+    function renderNewsAccessList() {
+        const list = document.getElementById('newsAccessList');
+        if (!newsAccessState.length) {
+            list.innerHTML = '<div class="small text-muted">Пока никого не добавили.</div>';
+            return;
+        }
+        list.innerHTML = newsAccessState.map((entry) => `
+            <div class="member-chip">
+                <span>${escapeHtml(entry.login)} (${entry.type === 'group' ? 'группа AD' : 'юзер'})</span>
+                <button class="chip-remove" title="Удалить доступ" onclick="removeNewsAccess('${encodeURIComponent(entry.login)}','${entry.type}')">&times;</button>
+            </div>
+        `).join('');
+    }
+
+    async function loadNewsAccess() {
+        const response = await fetch('/api/news-access');
+        newsAccessState = await response.json();
+        renderNewsAccessList();
+    }
+
+    async function searchNewsAccessAD() {
+        const q = document.getElementById('newsAccessSearch').value.trim();
+        const resDiv = document.getElementById('newsAccessSearchResults');
+        if (q.length < 2) {
+            resDiv.innerHTML = '';
+            return;
+        }
+        const response = await fetch(`/get_ad_entities?q=${encodeURIComponent(q)}`);
+        const results = await response.json();
+        resDiv.innerHTML = results.map((item) => `
+            <div class="ad-entry" onclick="addNewsAccess('${encodeURIComponent(item.login)}','${item.type === 'Группа AD' ? 'group' : 'user'}')">
+                <div><div class="fw-bold small">${escapeHtml(item.name)}</div><div class="text-muted" style="font-size:11px">${escapeHtml(item.login)}</div></div>
+                <span class="badge-ad ${item.type=='Юзер'?'user-type':'group-type'}">${item.type}</span>
+            </div>
+        `).join('');
+    }
+
+    async function addNewsAccess(encodedLogin, entityType) {
+        const login = decodeURIComponent(encodedLogin).toLowerCase();
+        await fetch('/manage_news_access', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'add', username: login, type: entityType})
+        });
+        document.getElementById('newsAccessSearch').value = '';
+        document.getElementById('newsAccessSearchResults').innerHTML = '';
+        await loadNewsAccess();
+    }
+
+    async function removeNewsAccess(encodedLogin, entityType) {
+        const login = decodeURIComponent(encodedLogin).toLowerCase();
+        await fetch('/manage_news_access', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({action: 'delete', username: login, type: entityType})
+        });
+        await loadNewsAccess();
+    }
+
     window.onload = async () => {
         initConfirmDeleteModal();
         initAdminConfirmModal();
@@ -1282,6 +1360,7 @@
         await loadBookingAccess();
         await loadResourceAccess();
         await loadAiAccess();
+        await loadNewsAccess();
     };
 </script>
 </body>

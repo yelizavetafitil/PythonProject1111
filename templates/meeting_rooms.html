@@ -1249,7 +1249,7 @@
     const isAdmin = {{ 'true' if is_admin else 'false' }};
     const currentUser = "{{ user_login }}";
     const currentUserDisplay = "{{ user_display }}";
-    const canAdminManageBookings = isAdmin;
+    const canAdminManageBookings = {{ 'true' if can_manage_all else 'false' }};
     const singleRoomMode = {{ 'true' if single_room_mode else 'false' }};
     const fixedRoomName = {{ (fixed_room_name or '')|tojson }};
     let rooms = [];

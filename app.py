@@ -782,7 +782,8 @@ def get_phonebook_contacts():
     return _phonebook_cache
 
 
-# Внутренние URL портала → таблица «расширенного доступа» в /manage (скрин 2).
+# Внутренние URL → список в /manage даёт вход на страницу (OR с группами на карточке).
+# Отдельно: phonebook-список ещё открывает полные номера; booking-список — правку чужих.
 RESOURCE_PATH_PRIVILEGE_TABLE = {
     '/tabel': 'tabel_privileged_entities',
     '/phonebook': 'phonebook_privileged_entities',
@@ -791,6 +792,11 @@ RESOURCE_PATH_PRIVILEGE_TABLE = {
     '/driver-trips': 'booking_privileged_entities',
     '/ai-assistant': 'ai_privileged_entities',
 }
+
+
+def _is_master_admin(username):
+    login = normalize_ad_username(username)
+    return bool(login) and login in MASTER_ADMINS
 
 
 def _resource_internal_path(url):
@@ -833,12 +839,33 @@ def _user_matches_resource_groups(username, group_ids, group_map, users_group_id
         return False
     ad_lower = {g.strip().lower() for g in user_ad_groups if g}
     for gid in group_ids:
+        # Группа «Пользователи» = все авторизованные (sentinel).
         if users_group_id and gid == users_group_id:
             return True
         allowed_entities = group_map.get(gid, [])
         if login in allowed_entities or any(ag in allowed_entities for ag in ad_lower):
             return True
     return False
+
+
+def _resource_grants_access(login, path, group_ids, group_map, users_group_id, user_ad_groups):
+    """
+    Одна карточка ресурса → доступ для пользователя.
+    - Есть группы: группа подходит ИЛИ запись в privilege-таблице для этого path.
+    - Групп нет + path в privilege-таблице: только privilege-список (пустые группы ≠ «всем»).
+    - Групп нет + обычный URL: виден всем авторизованным.
+    """
+    g_ids = [g for g in (group_ids or []) if g]
+    priv_table = RESOURCE_PATH_PRIVILEGE_TABLE.get(path) if path else None
+    has_priv = _has_privileged_entity_access(login, priv_table) if priv_table else False
+    if not g_ids:
+        if priv_table:
+            return has_priv
+        return True
+    has_group = _user_matches_resource_groups(
+        login, g_ids, group_map, users_group_id, user_ad_groups
+    )
+    return has_group or has_priv
 
 
 def _user_has_group_access_to_resource_url(username, url_path, conn=None):
@@ -863,9 +890,9 @@ def _user_has_group_access_to_resource_url(username, url_path, conn=None):
             if path != url_path:
                 continue
             g_ids = [g for g in (row['group_ids'] or '').split(',') if g]
-            if not g_ids:
-                return True
-            if _user_matches_resource_groups(login, g_ids, group_map, users_group_id, user_ad_groups):
+            if _resource_grants_access(
+                login, path, g_ids, group_map, users_group_id, user_ad_groups
+            ):
                 return True
         return False
     finally:
@@ -874,11 +901,11 @@ def _user_has_group_access_to_resource_url(username, url_path, conn=None):
 
 
 def can_access_portal_path(username, path):
-    """Доступ к странице: группа на карточке ресурса (скрин 1) ИЛИ запись в /manage (скрин 2)."""
+    """Доступ к странице: MASTER ИЛИ privilege-список (если есть) ИЛИ группа на карточке ресурса."""
     login = normalize_ad_username(username)
     if not login:
         return False
-    if login in MASTER_ADMINS:
+    if _is_master_admin(login):
         return True
     path = (path or '').rstrip('/') or '/'
     table = RESOURCE_PATH_PRIVILEGE_TABLE.get(path)
@@ -888,32 +915,32 @@ def can_access_portal_path(username, path):
 
 
 def can_access_portal_resource(username, url, group_ids_str, group_map, users_group_id, user_ad_groups):
-    """Видимость плитки на главной — та же логика, что и can_access_portal_path."""
+    """Видимость плитки на главной — та же семантика, что can_access_portal_path."""
     login = normalize_ad_username(username)
     if not login:
         return False
-    if login in MASTER_ADMINS:
+    if _is_master_admin(login):
         return True
     g_ids = [g for g in (group_ids_str or '').split(',') if g]
-    has_group = (
-        _user_matches_resource_groups(login, g_ids, group_map, users_group_id, user_ad_groups)
-        if g_ids else False
-    )
     path = _resource_internal_path(normalize_resource_url(url))
-    priv_table = RESOURCE_PATH_PRIVILEGE_TABLE.get(path) if path else None
-    has_priv = _has_privileged_entity_access(login, priv_table) if priv_table else False
-    if not g_ids:
-        if priv_table:
-            return has_priv
-        return True
-    return has_group or has_priv
+    return _resource_grants_access(
+        login, path, g_ids, group_map, users_group_id, user_ad_groups
+    )
 
 
 def can_view_extended_phonebook(username):
-    return can_access_portal_path(username, '/phonebook')
+    """Полные личные номера: только MASTER или список «Телефонная книга» в /manage."""
+    login = normalize_ad_username(username)
+    if not login:
+        return False
+    if _is_master_admin(login):
+        return True
+    return _has_privileged_entity_access(login, 'phonebook_privileged_entities')
 
 
 def _has_privileged_entity_access(login, table_name):
+    if not table_name:
+        return False
     user_groups = {group.strip().lower() for group in get_user_ad_groups_by_username(login)}
     conn = get_db_connection()
     try:
@@ -943,10 +970,11 @@ def _has_privileged_entity_access(login, table_name):
 
 
 def can_manage_all_bookings(username):
+    """Правка чужих броней/рейсов: MASTER или список «Бронирование» в /manage."""
     login = normalize_ad_username(username)
     if not login:
         return False
-    if login in MASTER_ADMINS:
+    if _is_master_admin(login):
         return True
     return _has_privileged_entity_access(login, 'booking_privileged_entities')
 
@@ -955,7 +983,7 @@ def can_manage_resources(username):
     login = normalize_ad_username(username)
     if not login:
         return False
-    if login in MASTER_ADMINS:
+    if _is_master_admin(login):
         return True
     return _has_privileged_entity_access(login, 'resource_privileged_entities')
 
@@ -966,6 +994,44 @@ def can_use_ai_assistant(username):
 
 def can_view_tabel(username):
     return can_access_portal_path(username, '/tabel')
+
+
+def can_manage_news(username):
+    login = normalize_ad_username(username)
+    if not login:
+        return False
+    if _is_master_admin(login):
+        return True
+    return _has_privileged_entity_access(login, 'news_privileged_entities')
+
+
+def _can_use_meeting_booking_apis(username):
+    return (
+        can_access_portal_path(username, '/meeting-rooms')
+        or can_access_portal_path(username, '/gym-booking')
+    )
+
+
+def _can_use_driver_trip_apis(username):
+    return can_access_portal_path(username, '/driver-trips')
+
+
+def _serialize_news_row(row):
+    if not row:
+        return None
+    item = dict(row)
+    item['is_pinned'] = bool(item.get('is_pinned'))
+    item['is_published'] = bool(item.get('is_published'))
+    body = (item.get('body') or '').replace('\r\n', '\n')
+    body = re.sub(r'[ \t]+\n', '\n', body)
+    body = re.sub(r'\n{2,}', '\n', body)
+    body = re.sub(r'[ \t]{2,}', ' ', body)
+    item['body'] = body.strip()
+    return item
+
+
+def _news_now_str():
+    return datetime.now(APP_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def _build_ai_sso_url(username, display_name):
@@ -1196,6 +1262,12 @@ def init_db():
                 entity_login TEXT NOT NULL,
                 PRIMARY KEY (entity_type, entity_login)
             )''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS news_privileged_entities (
+                entity_type TEXT NOT NULL,
+                entity_login TEXT NOT NULL,
+                PRIMARY KEY (entity_type, entity_login)
+            )''')
         # Миграция старого формата (только пользователи) в новый универсальный справочник.
         legacy_rows = conn.execute('SELECT username FROM phonebook_privileged_users').fetchall()
         for row in legacy_rows:
@@ -1304,6 +1376,74 @@ def init_db():
             ).fetchone()['cnt']
             if members_count == 0:
                 sync_all_ad_users_to_default_group(conn)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS portal_news (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                author_username TEXT NOT NULL,
+                author_display TEXT,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                is_published INTEGER NOT NULL DEFAULT 1,
+                published_at TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )''')
+        news_count = conn.execute('SELECT COUNT(*) AS cnt FROM portal_news').fetchone()['cnt']
+        if news_count == 0:
+            now = datetime.now(APP_TZ)
+            sample_news = [
+                (
+                    'Запуск внутреннего портала РУП «Белнипиэнергопром»',
+                    'Открыт единый корпоративный портал: сервисы, справочники и полезные ресурсы собраны в одном месте.\n\nЧерез главную страницу доступны бронирование переговорок, табель, телефонный справочник и другие разделы.',
+                    True,
+                    0,
+                ),
+                (
+                    'Обновлён регламент бронирования переговорок',
+                    'Просим заранее указывать тему встречи и участников из AD.\n\nПри необходимости администратор может перенести или отменить чужую бронь. История изменений сохраняется.',
+                    False,
+                    1,
+                ),
+                (
+                    'Напоминание по охране труда',
+                    'Напоминаем о необходимости соблюдать требования по охране труда на рабочих местах и в производственных помещениях.\n\nАктуальные инструкции доступны в разделе «База знаний».',
+                    False,
+                    2,
+                ),
+                (
+                    'График работы спортзала',
+                    'Бронирование спортзала доступно через отдельный сервис на портале.\n\nПросим освобождать площадку вовремя и отменять бронь, если планы изменились.',
+                    False,
+                    3,
+                ),
+                (
+                    'Сервис водителей: заявки на выезд',
+                    'Для командировок и выездов за пределы г. Минска используйте сервис водителей.\n\nУказывайте маршрут, время выезда и контакты ответственного сотрудника.',
+                    False,
+                    4,
+                ),
+            ]
+            for title, body, pinned, day_offset in sample_news:
+                stamp = (now - timedelta(days=day_offset)).strftime('%Y-%m-%d %H:%M:%S')
+                conn.execute(
+                    '''
+                    INSERT INTO portal_news (
+                        title, body, author_username, author_display,
+                        is_pinned, is_published, published_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+                    ''',
+                    (
+                        title,
+                        body,
+                        'system',
+                        'Администрация портала',
+                        1 if pinned else 0,
+                        stamp,
+                        stamp,
+                        stamp,
+                    ),
+                )
         conn.commit()
 
 
@@ -1556,6 +1696,181 @@ def manage_categories_page():
     return render_template('manage_categories.html', user=session.get('username'))
 
 
+@app.route('/news')
+def news_page():
+    if not session.get('logged_in'):
+        return redirect(url_for('login_page'))
+    username = session.get('username')
+    return render_template(
+        'news.html',
+        user=username,
+        user_display=session.get('display_name') or username,
+        can_manage_news=can_manage_news(username),
+    )
+
+
+@app.route('/api/news')
+def get_portal_news():
+    if not session.get('logged_in'):
+        return jsonify([]), 403
+    include_drafts = can_manage_news(session.get('username')) and request.args.get('all') == '1'
+    try:
+        limit = int(request.args.get('limit') or 0)
+    except (TypeError, ValueError):
+        limit = 0
+    conn = get_db_connection()
+    try:
+        query = '''
+            SELECT id, title, body, author_username, author_display,
+                   is_pinned, is_published, published_at, created_at, updated_at
+            FROM portal_news
+        '''
+        params = []
+        if not include_drafts:
+            query += ' WHERE is_published = 1'
+        query += ' ORDER BY is_pinned DESC, COALESCE(published_at, created_at) DESC, id DESC'
+        if limit > 0:
+            query += ' LIMIT ?'
+            params.append(limit)
+        rows = conn.execute(query, tuple(params)).fetchall()
+        return jsonify([_serialize_news_row(row) for row in rows])
+    finally:
+        conn.close()
+
+
+@app.route('/api/news/<int:news_id>')
+def get_portal_news_item(news_id):
+    if not session.get('logged_in'):
+        return jsonify(success=False), 403
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            '''
+            SELECT id, title, body, author_username, author_display,
+                   is_pinned, is_published, published_at, created_at, updated_at
+            FROM portal_news WHERE id = ?
+            ''',
+            (news_id,),
+        ).fetchone()
+        if not row:
+            return jsonify(success=False, error='Новость не найдена'), 404
+        item = _serialize_news_row(row)
+        if not item['is_published'] and not can_manage_news(session.get('username')):
+            return jsonify(success=False, error='Новость не найдена'), 404
+        return jsonify(item)
+    finally:
+        conn.close()
+
+
+@app.route('/api/news', methods=['POST'])
+def create_portal_news():
+    if not can_manage_news(session.get('username')):
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    body = (data.get('body') or '').strip()
+    is_pinned = 1 if data.get('is_pinned') else 0
+    is_published = 0 if data.get('is_published') is False else 1
+    if not title:
+        return jsonify(success=False, error='Укажите заголовок'), 400
+    if not body:
+        return jsonify(success=False, error='Укажите текст новости'), 400
+    username = session.get('username')
+    display = (session.get('display_name') or username or '').strip()
+    now = _news_now_str()
+    published_at = now if is_published else None
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            '''
+            INSERT INTO portal_news (
+                title, body, author_username, author_display,
+                is_pinned, is_published, published_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''',
+            (title, body, username, display, is_pinned, is_published, published_at, now, now),
+        )
+        news_id = cur.lastrowid
+        conn.commit()
+        row = conn.execute(
+            '''
+            SELECT id, title, body, author_username, author_display,
+                   is_pinned, is_published, published_at, created_at, updated_at
+            FROM portal_news WHERE id = ?
+            ''',
+            (news_id,),
+        ).fetchone()
+        return jsonify(success=True, item=_serialize_news_row(row))
+    finally:
+        conn.close()
+
+
+@app.route('/api/news/<int:news_id>', methods=['PUT'])
+def update_portal_news(news_id):
+    if not can_manage_news(session.get('username')):
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    data = request.json or {}
+    title = (data.get('title') or '').strip()
+    body = (data.get('body') or '').strip()
+    is_pinned = 1 if data.get('is_pinned') else 0
+    is_published = 0 if data.get('is_published') is False else 1
+    if not title:
+        return jsonify(success=False, error='Укажите заголовок'), 400
+    if not body:
+        return jsonify(success=False, error='Укажите текст новости'), 400
+    conn = get_db_connection()
+    try:
+        existing = conn.execute(
+            'SELECT id, is_published, published_at FROM portal_news WHERE id = ?',
+            (news_id,),
+        ).fetchone()
+        if not existing:
+            return jsonify(success=False, error='Новость не найдена'), 404
+        now = _news_now_str()
+        published_at = existing['published_at']
+        if is_published and not existing['is_published']:
+            published_at = now
+        elif not is_published:
+            published_at = existing['published_at']
+        conn.execute(
+            '''
+            UPDATE portal_news
+            SET title = ?, body = ?, is_pinned = ?, is_published = ?,
+                published_at = ?, updated_at = ?
+            WHERE id = ?
+            ''',
+            (title, body, is_pinned, is_published, published_at, now, news_id),
+        )
+        conn.commit()
+        row = conn.execute(
+            '''
+            SELECT id, title, body, author_username, author_display,
+                   is_pinned, is_published, published_at, created_at, updated_at
+            FROM portal_news WHERE id = ?
+            ''',
+            (news_id,),
+        ).fetchone()
+        return jsonify(success=True, item=_serialize_news_row(row))
+    finally:
+        conn.close()
+
+
+@app.route('/api/news/<int:news_id>', methods=['DELETE'])
+def delete_portal_news(news_id):
+    if not can_manage_news(session.get('username')):
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    conn = get_db_connection()
+    try:
+        existing = conn.execute('SELECT id FROM portal_news WHERE id = ?', (news_id,)).fetchone()
+        if not existing:
+            return jsonify(success=False, error='Новость не найдена'), 404
+        conn.execute('DELETE FROM portal_news WHERE id = ?', (news_id,))
+        conn.commit()
+        return jsonify(success=True)
+    finally:
+        conn.close()
+
+
 @app.route('/phonebook')
 def phonebook_page():
     if not session.get('logged_in'):
@@ -1579,14 +1894,15 @@ def phonebook_page():
 def meeting_rooms_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
-    if not can_access_portal_path(session.get('username'), '/meeting-rooms'):
+    username = session.get('username')
+    if not can_access_portal_path(username, '/meeting-rooms'):
         return redirect(url_for('index'))
-    is_admin = session.get('username') in MASTER_ADMINS
     return render_template(
         'meeting_rooms.html',
-        is_admin=is_admin,
-        user_login=session.get('username'),
-        user_display=session.get('display_name') or session.get('username'),
+        is_admin=_is_master_admin(username),
+        can_manage_all=can_manage_all_bookings(username),
+        user_login=username,
+        user_display=session.get('display_name') or username,
         single_room_mode=False,
         fixed_room_name=''
     )
@@ -1596,15 +1912,16 @@ def meeting_rooms_page():
 def gym_booking_page():
     if not session.get('logged_in'):
         return redirect(url_for('login_page'))
-    if not can_access_portal_path(session.get('username'), '/gym-booking'):
+    username = session.get('username')
+    if not can_access_portal_path(username, '/gym-booking'):
         return redirect(url_for('index'))
     ensure_gym_room_exists()
-    is_admin = session.get('username') in MASTER_ADMINS
     return render_template(
         'meeting_rooms.html',
-        is_admin=is_admin,
-        user_login=session.get('username'),
-        user_display=session.get('display_name') or session.get('username'),
+        is_admin=_is_master_admin(username),
+        can_manage_all=can_manage_all_bookings(username),
+        user_login=username,
+        user_display=session.get('display_name') or username,
         single_room_mode=True,
         fixed_room_name=GYM_ROOM_NAME
     )
@@ -1995,6 +2312,8 @@ def _sync_room_name_in_booking_history(conn, room_id, room_name):
 def get_meeting_rooms():
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify([]), 403
     conn = get_db_connection()
     try:
         rows = conn.execute('SELECT id, name FROM meeting_rooms ORDER BY name COLLATE NOCASE').fetchall()
@@ -2005,7 +2324,7 @@ def get_meeting_rooms():
 
 @app.route('/api/meeting-rooms', methods=['POST'])
 def create_meeting_room():
-    if session.get('username') not in MASTER_ADMINS:
+    if not _is_master_admin(session.get('username')):
         return jsonify(success=False, error='Только администратор может добавлять переговорки'), 403
     data = request.json or {}
     room_name = (data.get('name') or '').strip()
@@ -2025,7 +2344,7 @@ def create_meeting_room():
 
 @app.route('/api/meeting-rooms/<int:room_id>', methods=['PUT'])
 def update_meeting_room(room_id):
-    if session.get('username') not in MASTER_ADMINS:
+    if not _is_master_admin(session.get('username')):
         return jsonify(success=False, error='Только администратор может редактировать переговорки'), 403
     data = request.json or {}
     room_name = (data.get('name') or '').strip()
@@ -2053,7 +2372,7 @@ def update_meeting_room(room_id):
 
 @app.route('/api/meeting-rooms/<int:room_id>', methods=['DELETE'])
 def delete_meeting_room(room_id):
-    if session.get('username') not in MASTER_ADMINS:
+    if not _is_master_admin(session.get('username')):
         return jsonify(success=False, error='Только администратор может удалять переговорки'), 403
     conn = get_db_connection()
     try:
@@ -2274,6 +2593,8 @@ def _send_meeting_cancellation_email(recipient_email, booking_info):
 def get_meeting_bookings():
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify([]), 403
     conn = get_db_connection()
     try:
         rows = conn.execute(f'''
@@ -2296,6 +2617,8 @@ def get_meeting_bookings():
 def create_meeting_booking():
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к бронированию'), 403
     data = request.json or {}
     payload = {
         'room_id': data.get('room_id'),
@@ -2350,6 +2673,8 @@ def create_meeting_booking():
 def update_meeting_booking(booking_id):
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к бронированию'), 403
     data = request.json or {}
     payload = {
         'room_id': data.get('room_id'),
@@ -2410,6 +2735,8 @@ def update_meeting_booking(booking_id):
 def delete_meeting_booking(booking_id):
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к бронированию'), 403
     conn = get_db_connection()
     try:
         booking = _fetch_meeting_booking_row(conn, booking_id)
@@ -2467,6 +2794,8 @@ def delete_meeting_booking(booking_id):
 def get_meeting_booking_history(booking_id):
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not _can_use_meeting_booking_apis(session.get('username')):
+        return jsonify([]), 403
     conn = get_db_connection()
     try:
         booking_exists = conn.execute('SELECT 1 FROM meeting_bookings WHERE id = ?', (booking_id,)).fetchone()
@@ -2496,6 +2825,8 @@ def get_meeting_booking_history(booking_id):
 def get_driver_trips():
     if not session.get('logged_in'):
         return jsonify([]), 403
+    if not _can_use_driver_trip_apis(session.get('username')):
+        return jsonify([]), 403
     conn = get_db_connection()
     try:
         rows = conn.execute(
@@ -2515,6 +2846,8 @@ def get_driver_trips():
 def create_driver_trip():
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_driver_trip_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к сервису водителей'), 403
     data = request.json or {}
     payload = {
         'vehicle_model': (data.get('vehicle_model') or '').strip(),
@@ -2585,6 +2918,8 @@ def create_driver_trip():
 def update_driver_trip(trip_id):
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_driver_trip_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к сервису водителей'), 403
     data = request.json or {}
     payload = {
         'vehicle_model': (data.get('vehicle_model') or '').strip(),
@@ -2670,6 +3005,8 @@ def update_driver_trip(trip_id):
 def cancel_driver_trip(trip_id):
     if not session.get('logged_in'):
         return jsonify(success=False), 403
+    if not _can_use_driver_trip_apis(session.get('username')):
+        return jsonify(success=False, error='Нет доступа к сервису водителей'), 403
     current_user = session.get('username')
     conn = get_db_connection()
     try:
@@ -2722,6 +3059,8 @@ def cancel_driver_trip(trip_id):
 @app.route('/api/driver-trips/<int:trip_id>/history')
 def get_driver_trip_history(trip_id):
     if not session.get('logged_in'):
+        return jsonify([]), 403
+    if not _can_use_driver_trip_apis(session.get('username')):
         return jsonify([]), 403
     conn = get_db_connection()
     try:
@@ -3324,6 +3663,59 @@ def get_ai_access_entities():
         conn.close()
 
 
+@app.route('/api/news-access')
+def get_news_access_entities():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify([]), 403
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            '''
+            SELECT entity_type, entity_login
+            FROM news_privileged_entities
+            ORDER BY entity_type ASC, entity_login COLLATE NOCASE
+            '''
+        ).fetchall()
+        return jsonify([{'type': row['entity_type'], 'login': row['entity_login']} for row in rows])
+    finally:
+        conn.close()
+
+
+@app.route('/manage_news_access', methods=['POST'])
+def manage_news_access():
+    if session.get('username') not in MASTER_ADMINS:
+        return jsonify(success=False), 403
+    payload = request.json or {}
+    action = (payload.get('action') or '').strip()
+    entity_type = (payload.get('type') or 'user').strip().lower()
+    raw_login = payload.get('username')
+    if entity_type == 'group':
+        entity_login = str(raw_login or '').strip().lower()
+    else:
+        entity_type = 'user'
+        entity_login = normalize_ad_username(raw_login)
+    if action not in ('add', 'delete'):
+        return jsonify(success=False, error='Неизвестное действие'), 400
+    if not entity_login:
+        return jsonify(success=False, error='Укажите пользователя или группу'), 400
+    conn = get_db_connection()
+    try:
+        if action == 'add':
+            conn.execute(
+                'INSERT OR IGNORE INTO news_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (entity_type, entity_login)
+            )
+        else:
+            conn.execute(
+                'DELETE FROM news_privileged_entities WHERE entity_type = ? AND entity_login = ?',
+                (entity_type, entity_login)
+            )
+        conn.commit()
+        return jsonify(success=True)
+    finally:
+        conn.close()
+
+
 ACCESS_EXPORT_TYPE = 'belnipi_access'
 ACCESS_EXPORT_VERSION = 1
 
@@ -3392,6 +3784,7 @@ def _build_access_export_payload(conn):
         'resource_privileged_entities': privileged('resource_privileged_entities'),
         'ai_privileged_entities': privileged('ai_privileged_entities'),
         'tabel_privileged_entities': privileged('tabel_privileged_entities'),
+        'news_privileged_entities': privileged('news_privileged_entities'),
     }
 
 
@@ -3527,6 +3920,7 @@ def import_access_permissions():
     resource_in = as_privileged('resource_privileged_entities')
     ai_in = as_privileged('ai_privileged_entities')
     tabel_in = as_privileged('tabel_privileged_entities')
+    news_in = as_privileged('news_privileged_entities')
 
     conn = get_db_connection()
     try:
@@ -3538,6 +3932,7 @@ def import_access_permissions():
         conn.execute('DELETE FROM resource_privileged_entities')
         conn.execute('DELETE FROM ai_privileged_entities')
         conn.execute('DELETE FROM tabel_privileged_entities')
+        conn.execute('DELETE FROM news_privileged_entities')
 
         for row in groups_in:
             conn.execute('INSERT OR IGNORE INTO groups (name) VALUES (?)', (row['name'],))
@@ -3629,6 +4024,11 @@ def import_access_permissions():
                 'INSERT OR IGNORE INTO tabel_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
                 (et, el),
             )
+        for et, el in news_in:
+            conn.execute(
+                'INSERT OR IGNORE INTO news_privileged_entities (entity_type, entity_login) VALUES (?, ?)',
+                (et, el),
+            )
 
         conn.commit()
     except Exception as exc:
@@ -3649,6 +4049,7 @@ def import_access_permissions():
             'resource_privileged': len(resource_in),
             'ai_privileged': len(ai_in),
             'tabel_privileged': len(tabel_in),
+            'news_privileged': len(news_in),
         },
     )
 
