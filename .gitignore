@@ -6,3 +6,5 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
+database.local.full.db
+database_before_import_*.db
