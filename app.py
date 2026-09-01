@@ -3554,6 +3554,7 @@ def get_resources():
             admin_rows = [dict(row) for row in rows]
             for row in admin_rows:
                 row['url'] = normalize_resource_url(row.get('url'))
+                row['icon'] = normalize_resource_icon(row.get('icon'))
             return jsonify([row for row in admin_rows if matches_search(row)])
 
         group_map, users_group_id = _load_resource_group_access_maps(conn)
@@ -3562,6 +3563,7 @@ def get_resources():
         for r in rows:
             row_dict = dict(r)
             row_dict['url'] = normalize_resource_url(row_dict.get('url'))
+            row_dict['icon'] = normalize_resource_icon(row_dict.get('icon'))
             if can_access_portal_resource(
                 u,
                 row_dict['url'],

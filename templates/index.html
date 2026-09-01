@@ -1012,13 +1012,20 @@
         { value: 'layers', label: 'Разделы' },
     ];
 
+    function normalizeResourceIconValue(icon) {
+        const value = String(icon || '').trim().toLowerCase();
+        if (!value) return '';
+        return RESOURCE_ICON_OPTIONS.some((opt) => opt.value === value) ? value : '';
+    }
+
     function setResourceIconValue(hiddenInputId, containerId, value) {
+        const normalized = normalizeResourceIconValue(value);
         const hidden = document.getElementById(hiddenInputId);
         const container = document.getElementById(containerId);
         if (!hidden || !container) return;
-        hidden.value = value || '';
+        hidden.value = normalized;
         container.querySelectorAll('.icon-picker-btn').forEach((btn) => {
-            btn.classList.toggle('selected', (btn.dataset.iconValue || '') === (value || ''));
+            btn.classList.toggle('selected', (btn.dataset.iconValue || '') === normalized);
         });
     }
 
@@ -1045,7 +1052,8 @@
     }
 
     function resolveResourceIconName(item) {
-        if (item.icon) return item.icon;
+        const storedIcon = normalizeResourceIconValue(item.icon);
+        if (storedIcon) return storedIcon;
         return getResourceIconName(item);
     }
 
@@ -1224,7 +1232,7 @@
         document.getElementById('e_title').value = item.title;
         document.getElementById('e_url').value = item.url;
         document.getElementById('e_desc').value = item.desc || '';
-        setResourceIconValue('editIconValue', 'editIconPicker', item.icon || '');
+        setResourceIconValue('editIconValue', 'editIconPicker', item.icon);
         const editOptions = document.getElementById('editCategoryOptions');
         const editNewInput = document.getElementById('editCategoryNew');
         if (editOptions) {
@@ -1236,8 +1244,8 @@
                 setCategoryValue('edit', '__new__');
                 if (editNewInput) editNewInput.value = item.category;
             }
-            renderIcons();
         }
+        renderIcons();
         const curGids = item.group_ids ? item.group_ids.split(',') : [];
         document.querySelectorAll('#editGroups .group-option').forEach(opt => {
             opt.classList.toggle('selected', curGids.includes(opt.dataset.value));
@@ -1328,6 +1336,11 @@
 
         const addModalEl = document.getElementById('addModal');
         const editModalEl = document.getElementById('editModal');
+        editModalEl.addEventListener('shown.bs.modal', () => {
+            const value = document.getElementById('editIconValue')?.value || '';
+            setResourceIconValue('editIconValue', 'editIconPicker', value);
+            renderIcons();
+        });
         addModalEl.addEventListener('hidden.bs.modal', () => {
             const form = document.getElementById('addForm');
             form.reset();
