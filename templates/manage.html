@@ -926,23 +926,93 @@
         renderGroups();
     }
 
-    async function exportAccessPermissions() {
-        const r = await fetch('/api/admin/export-access');
-        if (!r.ok) {
-            showInfo('Выгрузка', 'Не удалось сформировать файл.');
-            return;
+    function parseDownloadFilename(contentDisposition, fallback) {
+        const cd = contentDisposition || '';
+        const utf = cd.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+        if (utf) {
+            try {
+                return decodeURIComponent(utf[1].trim().replace(/"/g, ''));
+            } catch (e) { /* ignore */ }
         }
-        const cd = r.headers.get('Content-Disposition') || '';
-        let fname = '';
-        const m = cd.match(/filename="([^"]+)"/);
-        if (m) fname = m[1];
-        const blob = await r.blob();
+        const plain = cd.match(/filename\s*=\s*"([^"]+)"/i) || cd.match(/filename\s*=\s*([^;]+)/i);
+        if (plain) return plain[1].trim().replace(/"/g, '');
+        return fallback;
+    }
+
+    function triggerBrowserDownload(blob, filename) {
+        if (!blob || !(blob instanceof Blob) || blob.size === 0) {
+            throw new Error('Пустой файл');
+        }
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fname || 'access_export.json';
+        a.download = filename || 'download.bin';
+        a.rel = 'noopener';
+        a.style.display = 'none';
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2500);
+    }
+
+    async function fetchDownloadBlob(url) {
+        const r = await fetch(url, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'same-origin',
+            headers: { 'Accept': '*/*' },
+        });
+        const ctype = (r.headers.get('Content-Type') || '').toLowerCase();
+        if (!r.ok) {
+            let msg = `Не удалось скачать (HTTP ${r.status})`;
+            try {
+                const j = await r.json();
+                if (j && j.error) msg = j.error;
+            } catch (e) { /* ignore */ }
+            throw new Error(msg);
+        }
+        const blob = await r.blob();
+        if (!blob || blob.size === 0) {
+            throw new Error('Сервер вернул пустой файл');
+        }
+        // Ошибка API иногда приходит как JSON с 200 — отсекаем
+        if (ctype.includes('application/json') && blob.size < 512) {
+            try {
+                const j = JSON.parse(await blob.text());
+                if (j && j.success === false) {
+                    throw new Error(j.error || 'Ошибка выгрузки');
+                }
+            } catch (e) {
+                if (e && e.message && !String(e.message).includes('JSON')) throw e;
+            }
+        }
+        const fname = parseDownloadFilename(
+            r.headers.get('Content-Disposition'),
+            url.includes('export-database') ? 'database.db' : 'access_export.json'
+        );
+        return { blob, fname, contentType: ctype };
+    }
+
+    async function exportAccessPermissions() {
+        try {
+            const { blob, fname } = await fetchDownloadBlob('/api/admin/export-access');
+            // Быстрая проверка, что это валидный JSON настроек
+            const text = await blob.text();
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch (e) {
+                throw new Error('Выгрузка JSON повреждена');
+            }
+            if (!parsed || parsed.export_type !== 'belnipi_access') {
+                throw new Error('В файле нет настроек доступа портала');
+            }
+            const out = new Blob([text], { type: 'application/json;charset=utf-8' });
+            triggerBrowserDownload(out, fname || 'access_export.json');
+            showInfo('Выгрузка', `Скачан файл ${fname || 'access_export.json'} (${out.size} байт).`);
+        } catch (e) {
+            showInfo('Выгрузка', e.message || 'Не удалось сформировать JSON.');
+        }
     }
 
     async function importAccessPermissions(input) {
@@ -989,27 +1059,18 @@
     }
 
     async function exportDatabaseFile() {
-        const r = await fetch('/api/admin/export-database');
-        if (!r.ok) {
-            let msg = 'Не удалось сформировать файл.';
-            try {
-                const j = await r.json();
-                if (j.error) msg = j.error;
-            } catch (e) { /* ignore */ }
-            showInfo('База данных', msg);
-            return;
+        try {
+            const { blob, fname } = await fetchDownloadBlob('/api/admin/export-database');
+            const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+            const magic = String.fromCharCode(...head.slice(0, 15));
+            if (magic !== 'SQLite format 3') {
+                throw new Error('Скачанный файл не является корректной SQLite-базой');
+            }
+            triggerBrowserDownload(blob, fname || 'database.db');
+            showInfo('База данных', `Скачан файл ${fname || 'database.db'} (${blob.size} байт).`);
+        } catch (e) {
+            showInfo('База данных', e.message || 'Не удалось сформировать файл.');
         }
-        const cd = r.headers.get('Content-Disposition') || '';
-        let fname = '';
-        const m = cd.match(/filename="([^"]+)"/);
-        if (m) fname = m[1];
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fname || 'database.db';
-        a.click();
-        URL.revokeObjectURL(url);
     }
 
     async function importDatabaseFile(input) {

@@ -245,7 +245,11 @@
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0; border: 1px solid #dde7f5;
         }
-        .tile-icon { width: 20px; height: 20px; object-fit: contain; }
+        .resource-card.is-just-added {
+            outline: 2px solid rgba(28, 79, 156, 0.45);
+            box-shadow: 0 0 0 4px rgba(28, 79, 156, 0.12);
+            transition: outline-color 0.8s ease, box-shadow 0.8s ease;
+        }
 
         .card-body { flex-grow: 1; min-width: 0; }
         .card-title {
@@ -899,6 +903,7 @@
     }
     renderIcons();
     const canManageResources = {{ 'true' if can_manage_resources else 'false' }};
+    const isMasterAdmin = {{ 'true' if is_admin else 'false' }};
     let allResources = [];
     let allCategories = [];
     const DEFAULT_RESOURCE_ICON = "data:image/svg+xml;utf8," + encodeURIComponent(
@@ -1076,9 +1081,13 @@
         }
     }
 
-    async function loadResources() {
-        const q = document.getElementById('searchInput').value;
-        const res = await fetch(`/get_resources?search=${encodeURIComponent(q)}`);
+    async function loadResources(options = {}) {
+        const highlightId = options.highlightId;
+        const searchInput = document.getElementById('searchInput');
+        const q = searchInput ? searchInput.value : '';
+        const res = await fetch(`/get_resources?search=${encodeURIComponent(q)}&_=${Date.now()}`, {
+            cache: 'no-store',
+        });
         allResources = await res.json();
         const grid = document.getElementById('resourcesGrid');
         const cats = [...new Set(allResources.map(r => r.category))].sort();
@@ -1103,7 +1112,37 @@
                 </div>
             </div>`).join('');
         renderIcons();
-        if (canManageResources) document.querySelectorAll('.sortable-list').forEach(l => new Sortable(l, { group: 'shared', animation: 150, onEnd: saveOrder }));
+        if (isMasterAdmin) {
+            document.querySelectorAll('.sortable-list').forEach((l) => new Sortable(l, {
+                group: 'shared',
+                animation: 150,
+                onEnd: saveOrder,
+            }));
+        }
+        if (highlightId) {
+            const card = grid.querySelector(`.resource-card[data-id="${highlightId}"]`);
+            if (card) {
+                card.classList.add('is-just-added');
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                setTimeout(() => card.classList.remove('is-just-added'), 1600);
+            }
+        }
+    }
+
+    async function saveOrder() {
+        if (!isMasterAdmin) return;
+        const order = [];
+        document.querySelectorAll('#resourcesGrid .category-group').forEach((s) => {
+            const cat = s.querySelector('.category-header').innerText.trim();
+            s.querySelectorAll('[data-id]').forEach((i) => {
+                order.push({ id: parseInt(i.dataset.id, 10), category: cat });
+            });
+        });
+        await fetch('/reorder', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(order),
+        });
     }
 
     async function loadGroups() {
@@ -1287,52 +1326,65 @@
     async function delItem(id) {
         const shouldDelete = await showDeleteConfirm('Удалить этот ресурс?');
         if (!shouldDelete) return;
-        await fetch(`/delete/${id}`, { method: 'POST' });
-        loadResources();
+        const response = await fetch(`/delete/${id}`, { method: 'POST' });
+        if (!response.ok) return;
+        await loadResources();
     }
 
     if (canManageResources) {
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
-            const addUrlInput = e.target.querySelector('input[name="url"]');
+            const form = e.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const addUrlInput = form.querySelector('input[name="url"]');
             if (!addUrlInput || !addUrlInput.value.trim()) {
                 addUrlInput?.focus();
                 return;
             }
-            await fetch('/add', { method: 'POST', body: new FormData(e.target) });
-            await loadCategories();
-            loadResources();
-            bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
-            e.target.reset();
-            document.querySelectorAll('#addGroups .group-option').forEach(opt => opt.classList.remove('selected'));
-            syncHiddenInputs('addGroups');
-            updateGroupLabels();
-            const addOptions = document.getElementById('addCategoryOptions');
-            if (addOptions) addOptions.innerHTML = categoryOptionsHtml('');
-            setCategoryValue('add', '');
-            setResourceIconValue('addIconValue', 'addIconPicker', '');
-            renderIcons();
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const response = await fetch('/add', { method: 'POST', body: new FormData(form) });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    alert(data.error || 'Не удалось сохранить ресурс');
+                    return;
+                }
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput && searchInput.value.trim()) searchInput.value = '';
+                await loadCategories();
+                await loadResources({ highlightId: data.id });
+                bootstrap.Modal.getInstance(document.getElementById('addModal'))?.hide();
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
         };
         document.getElementById('editForm').onsubmit = async (e) => {
             e.preventDefault();
-            const editUrlInput = e.target.querySelector('input[name="url"]');
+            const form = e.target;
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const editUrlInput = form.querySelector('input[name="url"]');
             if (!editUrlInput || !editUrlInput.value.trim()) {
                 editUrlInput?.focus();
                 return;
             }
-            await fetch(`/edit/${e.target.dataset.id}`, { method: 'POST', body: new FormData(e.target) });
-            await loadCategories();
-            loadResources();
-            bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+            if (submitBtn) submitBtn.disabled = true;
+            try {
+                const response = await fetch(`/edit/${form.dataset.id}`, {
+                    method: 'POST',
+                    body: new FormData(form),
+                });
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok || !data.success) {
+                    alert(data.error || 'Не удалось сохранить изменения');
+                    return;
+                }
+                await loadCategories();
+                await loadResources({ highlightId: Number(form.dataset.id) });
+                bootstrap.Modal.getInstance(document.getElementById('editModal'))?.hide();
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
         };
-        async function saveOrder() {
-            const order = [];
-            document.querySelectorAll('#resourcesGrid .category-group').forEach(s => {
-                const cat = s.querySelector('.category-header').innerText.trim();
-                s.querySelectorAll('[data-id]').forEach(i => order.push({ id: parseInt(i.dataset.id), category: cat }));
-            });
-            await fetch('/reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(order) });
-        }
 
         const addModalEl = document.getElementById('addModal');
         const editModalEl = document.getElementById('editModal');

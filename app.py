@@ -20,6 +20,8 @@ from email import policy
 import ssl
 from urllib.parse import urlparse
 from urllib.parse import urlencode
+from urllib.parse import quote
+from io import BytesIO
 from urllib import request as urllib_request
 from urllib.error import URLError, HTTPError
 from datetime import datetime
@@ -3592,20 +3594,28 @@ def add_resource():
     icon = normalize_resource_icon(request.form.get('icon'))
     if not c:
         return jsonify(success=False, error='Укажите раздел'), 400
+    if not (t or '').strip() or not u:
+        return jsonify(success=False, error='Укажите название и URL'), 400
     gids = request.form.getlist('access_group_ids')
     conn = get_db_connection()
     try:
         cur = conn.cursor()
+        next_pos = cur.execute(
+            'SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM resources'
+        ).fetchone()['pos']
         cur.execute(
-            "INSERT INTO resources (title, url, category, desc, icon) VALUES (?, ?, ?, ?, ?)",
-            (t, u, c, d, icon),
+            "INSERT INTO resources (title, url, category, desc, icon, position) VALUES (?, ?, ?, ?, ?, ?)",
+            (t.strip(), u, c, d, icon, next_pos),
         )
         cur.execute("INSERT OR IGNORE INTO categories (name) VALUES (?)", (c,))
         rid = cur.lastrowid
-        for gid in gids: cur.execute("INSERT INTO resource_group_access (resource_id, group_id) VALUES (?, ?)",
-                                     (rid, int(gid)))
+        for gid in gids:
+            cur.execute(
+                "INSERT INTO resource_group_access (resource_id, group_id) VALUES (?, ?)",
+                (rid, int(gid)),
+            )
         conn.commit()
-        return jsonify(success=True)
+        return jsonify(success=True, id=rid)
     finally:
         conn.close()
 
@@ -3656,7 +3666,8 @@ def delete_resource(res_id):
 
 @app.route('/reorder', methods=['POST'])
 def reorder():
-    if not can_manage_resources(session.get('username')): return jsonify(success=False), 403
+    if not _is_master_admin(session.get('username')):
+        return jsonify(success=False), 403
     conn = get_db_connection()
     try:
         for index, entry in enumerate(request.json):
@@ -4079,6 +4090,32 @@ ACCESS_EXPORT_TYPE = 'belnipi_access'
 ACCESS_EXPORT_VERSION = 1
 
 
+def _attachment_response(payload, filename, mimetype):
+    """Надёжная отдача файла: длина, no-cache, корректный Content-Disposition."""
+    if isinstance(payload, str):
+        data = payload.encode('utf-8')
+    else:
+        data = payload or b''
+    bio = BytesIO(data)
+    bio.seek(0)
+    resp = send_file(
+        bio,
+        mimetype=mimetype,
+        as_attachment=True,
+        download_name=filename,
+        max_age=0,
+    )
+    resp.headers['Content-Length'] = str(len(data))
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    # Дублируем имя и в RFC 5987 — на случай старых браузеров/прокси
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'
+    )
+    return resp
+
+
 def _build_access_export_payload(conn):
     groups_rows = conn.execute('SELECT id, name FROM groups ORDER BY name COLLATE NOCASE').fetchall()
     groups_out = [{'name': row['name']} for row in groups_rows]
@@ -4100,19 +4137,27 @@ def _build_access_export_payload(conn):
 
     res_rows = conn.execute(
         '''
-        SELECT r.id, r.title, r.url, r.category, r.desc, r.position, r.icon,
-               GROUP_CONCAT(g.name) AS group_names
+        SELECT r.id, r.title, r.url, r.category, r.desc, r.position, r.icon
         FROM resources r
-        LEFT JOIN resource_group_access ga ON ga.resource_id = r.id
-        LEFT JOIN groups g ON g.id = ga.group_id
-        GROUP BY r.id
         ORDER BY r.position ASC, r.id ASC
         '''
     ).fetchall()
+    access_rows = conn.execute(
+        '''
+        SELECT ga.resource_id, g.name AS group_name
+        FROM resource_group_access ga
+        JOIN groups g ON g.id = ga.group_id
+        ORDER BY ga.resource_id ASC, g.name COLLATE NOCASE
+        '''
+    ).fetchall()
+    groups_by_resource = collections.defaultdict(list)
+    for row in access_rows:
+        name = (row['group_name'] or '').strip()
+        if name:
+            groups_by_resource[row['resource_id']].append(name)
+
     resources_out = []
     for row in res_rows:
-        raw_names = row['group_names'] or ''
-        gnames = [x.strip() for x in raw_names.split(',') if x and x.strip()]
         resources_out.append({
             'title': row['title'],
             'url': normalize_resource_url(row['url'] or ''),
@@ -4120,10 +4165,16 @@ def _build_access_export_payload(conn):
             'desc': row['desc'],
             'position': row['position'] if row['position'] is not None else 0,
             'icon': normalize_resource_icon(row['icon']),
-            'groups': gnames,
+            'groups': groups_by_resource.get(row['id'], []),
         })
 
     def privileged(table):
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if not exists:
+            return []
         rows = conn.execute(
             f'SELECT entity_type, entity_login FROM {table} ORDER BY entity_type, entity_login COLLATE NOCASE'
         ).fetchall()
@@ -4150,20 +4201,19 @@ def _build_access_export_payload(conn):
 @app.route('/api/admin/export-access', methods=['GET'])
 def export_access_permissions():
     if session.get('username') not in MASTER_ADMINS:
-        return jsonify(success=False), 403
-    conn = get_db_connection()
+        return jsonify(success=False, error='Недостаточно прав'), 403
     try:
-        payload = _build_access_export_payload(conn)
-    finally:
-        conn.close()
-    body = json.dumps(payload, ensure_ascii=False, indent=2)
-    fname = datetime.now(APP_TZ).strftime('access_%Y-%m-%d_%H-%M-%S.json')
-    resp = Response(
-        body + '\n',
-        mimetype='application/json; charset=utf-8',
-    )
-    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+        conn = get_db_connection()
+        try:
+            payload = _build_access_export_payload(conn)
+        finally:
+            conn.close()
+        body = json.dumps(payload, ensure_ascii=False, indent=2) + '\n'
+        fname = datetime.now(APP_TZ).strftime('access_%Y-%m-%d_%H-%M-%S.json')
+        return _attachment_response(body, fname, 'application/json; charset=utf-8')
+    except Exception as exc:
+        app.logger.exception('export-access failed')
+        return jsonify(success=False, error=f'Ошибка выгрузки JSON: {exc}'), 500
 
 
 @app.route('/api/admin/import-access', methods=['POST'])
@@ -4439,26 +4489,51 @@ def _build_database_export_bytes():
     abs_path = os.path.abspath(DB_PATH)
     if not os.path.isfile(abs_path):
         return None, 'Файл базы не найден на сервере'
-    fd, tmp_path = tempfile.mkstemp(suffix='.db')
-    os.close(fd)
-    src = sqlite3.connect(abs_path, timeout=30)
-    try:
-        dst = sqlite3.connect(tmp_path)
+
+    last_error = None
+    for attempt in range(3):
+        fd, tmp_path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        src = None
+        dst = None
         try:
+            src = sqlite3.connect(abs_path, timeout=60)
+            try:
+                src.execute('PRAGMA wal_checkpoint(PASSIVE)')
+            except sqlite3.Error:
+                pass
+            dst = sqlite3.connect(tmp_path)
             src.backup(dst)
-        finally:
             dst.close()
-    finally:
-        src.close()
-    try:
-        with open(tmp_path, 'rb') as f:
-            data = f.read()
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-    return data, None
+            dst = None
+            src.close()
+            src = None
+            with open(tmp_path, 'rb') as f:
+                data = f.read()
+            if len(data) < 512 or not data.startswith(b'SQLite format 3'):
+                return None, 'Сформированный файл базы повреждён или пуст'
+            return data, None
+        except sqlite3.OperationalError as exc:
+            last_error = exc
+            time.sleep(0.35 * (attempt + 1))
+        except Exception as exc:
+            return None, f'Ошибка копирования базы: {exc}'
+        finally:
+            if dst is not None:
+                try:
+                    dst.close()
+                except Exception:
+                    pass
+            if src is not None:
+                try:
+                    src.close()
+                except Exception:
+                    pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    return None, f'База занята, не удалось сделать копию: {last_error}'
 
 
 def _remove_db_wal_shm(db_path):
@@ -4492,14 +4567,16 @@ def _wal_checkpoint_truncate_and_remove_sidecars(db_path):
 @app.route('/api/admin/export-database', methods=['GET'])
 def export_database_file():
     if session.get('username') not in MASTER_ADMINS:
-        return jsonify(success=False), 403
-    data, err = _build_database_export_bytes()
-    if err:
-        return jsonify(success=False, error=err), 400
-    fname = datetime.now(APP_TZ).strftime('database_%Y-%m-%d_%H-%M-%S.db')
-    resp = Response(data, mimetype='application/x-sqlite3')
-    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+        return jsonify(success=False, error='Недостаточно прав'), 403
+    try:
+        data, err = _build_database_export_bytes()
+        if err:
+            return jsonify(success=False, error=err), 400
+        fname = datetime.now(APP_TZ).strftime('database_%Y-%m-%d_%H-%M-%S.db')
+        return _attachment_response(data, fname, 'application/octet-stream')
+    except Exception as exc:
+        app.logger.exception('export-database failed')
+        return jsonify(success=False, error=f'Ошибка выгрузки базы: {exc}'), 500
 
 
 @app.route('/api/admin/import-database', methods=['POST'])
