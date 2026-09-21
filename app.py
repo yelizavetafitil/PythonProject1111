@@ -6,6 +6,7 @@ import json
 import hmac
 import hashlib
 import time
+import secrets
 import threading
 import tempfile
 import sys
@@ -18,8 +19,11 @@ from email.utils import format_datetime
 from email.header import Header
 from email import policy
 import ssl
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl
 from urllib.parse import urlencode
+from urllib.parse import urlparse
+from urllib.parse import urlsplit
+from urllib.parse import urlunsplit
 from urllib.parse import quote
 from io import BytesIO
 from urllib import request as urllib_request
@@ -78,22 +82,27 @@ from ldap3 import Server, Connection, ALL, SUBTREE
 from ldap3.core.exceptions import LDAPException
 
 app = Flask(__name__)
-app.secret_key = 'enterprise_hub_production_v37'
+_portal_secret = os.environ.get('PORTAL_SECRET_KEY', '').strip()
+if not _portal_secret:
+    _portal_secret = secrets.token_hex(32)
+    app.logger.warning('PORTAL_SECRET_KEY is not set; using an ephemeral development secret')
+app.secret_key = _portal_secret
 app.config.update(
     SESSION_COOKIE_NAME='enterprise_hub_session',
     SESSION_COOKIE_PATH='/',
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=os.environ.get('SESSION_COOKIE_SECURE', '0').strip().lower() in ('1', 'true', 'yes'),
     PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     SESSION_REFRESH_EACH_REQUEST=False
 )
 
 LDAP_CONFIG = {
-    'uri': "ldap://192.168.0.4",
-    'base': "DC=local,DC=energoprom,DC=by",
-    'bind_dn': "CN=OC1,OU=ОЦ,DC=local,DC=energoprom,DC=by",
-    'bind_password': "Pass_OC_5678",
-    'user_attr': "sAMAccountName"
+    'uri': os.environ.get('LDAP_URI', 'ldap://192.168.0.4'),
+    'base': os.environ.get('LDAP_BASE_DN', 'DC=local,DC=energoprom,DC=by'),
+    'bind_dn': os.environ.get('LDAP_BIND_DN', 'CN=OC1,OU=ОЦ,DC=local,DC=energoprom,DC=by'),
+    'bind_password': os.environ.get('LDAP_BIND_PASSWORD', ''),
+    'user_attr': os.environ.get('LDAP_USER_ATTRIBUTE', 'sAMAccountName')
 }
 
 MASTER_ADMINS = ['rapeiko', 'oc1']
@@ -143,7 +152,7 @@ MAIL_SENDER = f'robot-bnp@{MAIL_DOMAIN}'
 SMTP_HOST = os.environ.get('SMTP_HOST', '192.168.0.28')
 SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
 SMTP_USERNAME = os.environ.get('SMTP_USERNAME', 'robot-bnp')
-SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '^nO@u(Flu5+zH&v>')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
 SMTP_USE_TLS = os.environ.get('SMTP_USE_TLS', '1') == '1'
 APP_TZ = ZoneInfo('Europe/Minsk')
 _phonebook_cache = None
@@ -187,8 +196,20 @@ KNOWLEDGE_BASE_INSTRUCTIONS_DIR = os.environ.get(
     'KNOWLEDGE_BASE_INSTRUCTIONS_DIR',
     KNOWLEDGE_BASE_ROOT
 )
-AI_ASSISTANT_URL = os.environ.get('AI_ASSISTANT_URL', 'http://localhost:5000/sso-login')
-AI_SSO_SHARED_SECRET = os.environ.get('AI_SSO_SHARED_SECRET', 'change-this-ai-sso-secret')
+AI_ASSISTANT_PUBLIC_URL = os.environ.get(
+    'AI_ASSISTANT_PUBLIC_URL',
+    'https://ai.energoprom.by',
+).strip().rstrip('/')
+AI_ASSISTANT_CALLBACK_URL = os.environ.get(
+    'AI_ASSISTANT_CALLBACK_URL',
+    f'{AI_ASSISTANT_PUBLIC_URL}/sso-login',
+).strip()
+# Обратная совместимость со старым именем переменной: раньше оно указывало
+# непосредственно на /sso-login.
+if os.environ.get('AI_ASSISTANT_URL') and not os.environ.get('AI_ASSISTANT_CALLBACK_URL'):
+    AI_ASSISTANT_CALLBACK_URL = os.environ['AI_ASSISTANT_URL'].strip()
+AI_SSO_SHARED_SECRET = os.environ.get('AI_SSO_SHARED_SECRET', '').strip()
+AI_SSO_MAX_AGE_SEC = int(os.environ.get('AI_SSO_MAX_AGE_SEC', '300'))
 
 
 def normalize_resource_url(raw_url):
@@ -1201,7 +1222,42 @@ def _set_exclusive_main_news(conn, news_id):
     )
 
 
-def _build_ai_sso_url(username, display_name):
+def _validated_ai_return_url(raw_url):
+    """Разрешить возврат только в фиксированный callback AI и сохранить state."""
+    value = (raw_url or '').strip()
+    if not value:
+        return None
+    try:
+        candidate = urlsplit(value)
+        configured = urlsplit(AI_ASSISTANT_CALLBACK_URL)
+    except ValueError:
+        return None
+    if (
+        candidate.scheme.lower() != configured.scheme.lower()
+        or candidate.netloc.lower() != configured.netloc.lower()
+        or candidate.path.rstrip('/') != configured.path.rstrip('/')
+        or candidate.fragment
+    ):
+        return None
+    query = dict(parse_qsl(candidate.query, keep_blank_values=True))
+    state = (query.get('state') or '').strip()
+    if not re.fullmatch(r'[A-Za-z0-9_-]{20,128}', state):
+        return None
+    return urlunsplit((
+        configured.scheme,
+        configured.netloc,
+        configured.path,
+        urlencode({'state': state}),
+        '',
+    ))
+
+
+def _build_ai_sso_url(username, display_name, return_url):
+    callback_url = _validated_ai_return_url(return_url)
+    if not callback_url:
+        raise ValueError('Недопустимый адрес возврата AI')
+    if not AI_SSO_SHARED_SECRET:
+        raise RuntimeError('AI_SSO_SHARED_SECRET не настроен на портале')
     login = normalize_ad_username(username)
     display = (display_name or login or '').strip()
     ts = str(int(time.time()))
@@ -1211,9 +1267,47 @@ def _build_ai_sso_url(username, display_name):
         payload.encode('utf-8'),
         hashlib.sha256
     ).hexdigest()
-    query = urlencode({'u': login, 'd': display, 'ts': ts, 'sig': signature})
-    separator = '&' if '?' in AI_ASSISTANT_URL else '?'
-    return f'{AI_ASSISTANT_URL}{separator}{query}'
+    callback = urlsplit(callback_url)
+    query = dict(parse_qsl(callback.query, keep_blank_values=True))
+    query.update({'u': login, 'd': display, 'ts': ts, 'sig': signature})
+    return urlunsplit((callback.scheme, callback.netloc, callback.path, urlencode(query), ''))
+
+
+def _remember_ai_return_url(return_url):
+    validated = _validated_ai_return_url(return_url)
+    if not validated:
+        return None
+    session['ai_sso_return'] = {
+        'url': validated,
+        'created_at': int(time.time()),
+    }
+    session.modified = True
+    return validated
+
+
+def _pending_ai_return_url():
+    item = session.get('ai_sso_return')
+    if not isinstance(item, dict):
+        return None
+    try:
+        age = int(time.time()) - int(item.get('created_at', 0))
+    except (TypeError, ValueError):
+        age = AI_SSO_MAX_AGE_SEC * 2 + 1
+    validated = _validated_ai_return_url(item.get('url'))
+    if not validated or age < 0 or age > AI_SSO_MAX_AGE_SEC * 2:
+        session.pop('ai_sso_return', None)
+        return None
+    return validated
+
+
+def _signed_ai_redirect_for_session(return_url):
+    redirect_url = _build_ai_sso_url(
+        session.get('username'),
+        session.get('display_name') or session.get('username'),
+        return_url,
+    )
+    session.pop('ai_sso_return', None)
+    return redirect_url
 
 
 def _knowledge_base_collect_categories():
@@ -1907,9 +2001,30 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login_page():
     if request.method == 'GET':
-        if session.get('logged_in'): return redirect(url_for('index'))
-        return render_template('login.html')
-    data = request.json
+        raw_return_url = request.args.get('return_url', '').strip()
+        if raw_return_url:
+            return_url = _remember_ai_return_url(raw_return_url)
+            if not return_url:
+                return 'Недопустимый адрес возврата', 400
+        else:
+            return_url = _pending_ai_return_url()
+        if session.get('logged_in'):
+            if return_url:
+                try:
+                    return redirect(_signed_ai_redirect_for_session(return_url), code=302)
+                except RuntimeError as exc:
+                    app.logger.error('AI SSO is not configured: %s', exc)
+                    return 'Вход в БелнипиAI временно не настроен', 503
+            return redirect(url_for('index'))
+        return render_template('login.html', ai_return_url=return_url or '')
+    data = request.get_json(silent=True) or {}
+    raw_return_url = (data.get('return_url') or '').strip()
+    if raw_return_url:
+        return_url = _remember_ai_return_url(raw_return_url)
+        if not return_url:
+            return jsonify(success=False, error='Недопустимый адрес возврата'), 400
+    else:
+        return_url = _pending_ai_return_url()
     u = normalize_ad_username(data.get('username', ''))
     p = data.get('password', '')
     if not u or not p:
@@ -1925,7 +2040,16 @@ def login_page():
             conn.commit()
         finally:
             conn.close()
-        return jsonify(success=True)
+        response = {'success': True}
+        if return_url:
+            try:
+                response['redirect_url'] = _signed_ai_redirect_for_session(return_url)
+            except RuntimeError as exc:
+                app.logger.error('AI SSO is not configured: %s', exc)
+                return jsonify(success=False, error='Вход в БелнипиAI временно не настроен'), 503
+        else:
+            response['redirect_url'] = url_for('index')
+        return jsonify(response)
     return jsonify(success=False, error=auth_error or 'Ошибка авторизации AD'), 401
 
 
@@ -2322,8 +2446,7 @@ def ai_assistant_page():
     username = session.get('username')
     if not can_access_portal_path(username, '/ai-assistant'):
         return redirect(url_for('index'))
-    redirect_url = _build_ai_sso_url(username, session.get('display_name') or username)
-    return redirect(redirect_url, code=302)
+    return redirect(AI_ASSISTANT_PUBLIC_URL, code=302)
 
 
 @app.route('/tabel')
@@ -4691,6 +4814,22 @@ def manage_ai_access():
         return jsonify(success=True)
     finally:
         conn.close()
+
+
+@app.route('/healthz')
+def healthz():
+    """Unauthenticated Docker/reverse-proxy readiness probe."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        conn.execute('SELECT 1').fetchone()
+    except sqlite3.Error:
+        app.logger.exception('Portal health check failed')
+        return jsonify(status='error', database='unavailable'), 503
+    finally:
+        if conn is not None:
+            conn.close()
+    return jsonify(status='ok')
 
 
 if __name__ == '__main__':

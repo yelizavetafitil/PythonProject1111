@@ -39,12 +39,57 @@
 
 Настройка LDAP
 --------------
-Перед запуском проверьте LDAP-настройки в app.py, блок LDAP_CONFIG:
-- uri
-- base
-- bind_dn
-- bind_password
-- user_attr
+Перед запуском задайте LDAP-настройки в `.env.production`:
+- LDAP_URI
+- LDAP_BASE_DN
+- LDAP_BIND_DN
+- LDAP_BIND_PASSWORD
+- LDAP_USER_ATTRIBUTE
+
+Пароли LDAP и SMTP не хранятся в `app.py` и не должны попадать в Git.
+Шаблон всех переменных находится в `.env.example`.
+
+Единый вход в БелнипиAI
+-----------------------
+Портал является центром авторизации для `https://ai.energoprom.by`.
+После входа через Active Directory портал возвращает AI-приложению только
+логин, отображаемое имя, короткоживущую HMAC-подпись и сохранённый одноразовый
+`state`. Пароль AD в AI-приложение не передаётся.
+
+Настройте в окружении портала:
+
+  AI_ASSISTANT_PUBLIC_URL=https://ai.energoprom.by
+  AI_ASSISTANT_CALLBACK_URL=https://ai.energoprom.by/sso-login
+  AI_SSO_SHARED_SECRET=<тот же случайный секрет, что и у AI-приложения>
+  AI_SSO_MAX_AGE_SEC=300
+
+Запрос `return_url` принимается только для точного callback
+`https://ai.energoprom.by/sso-login`; внешние адреса и callback без корректного
+`state` отклоняются. Плитка `/ai-assistant` начинает вход с публичного адреса AI,
+чтобы AI-приложение само создало одноразовый `state`.
+
+Общий production-конфиг для портала и AI можно безопасно подготовить командой
+из каталога проекта AI (секрет не печатается в консоль):
+
+  bash deploy/prepare-sso-production.sh ../PythonProject1111
+
+Для обновления уже работающего Docker-портала с сохранением `database.db`:
+
+  bash deploy/update-docker-production.sh
+
+Скрипт сначала собирает новый образ, останавливает только web-контейнер,
+создаёт целостную резервную копию SQLite в `backups/`, пересоздаёт сервис и ждёт
+статуса Docker `healthy`.
+
+Если на сервер сделан новый `git clone`, а старое развёртывание лежит в другом
+каталоге, сначала выполнить:
+
+  python3 deploy/bootstrap-from-existing.py /path/to/old/PythonProject1111 --ai-dir /path/to/ai_belnipi
+
+Скрипт без вывода секретов перенесёт LDAP/SMTP-настройки в `.env.production`,
+согласует SSO-секрет с AI-проектом, скопирует рабочую SQLite-базу через
+безопасный backup API, кэш табеля и загруженные картинки новостей. После него
+запустить `bash deploy/update-docker-production.sh`.
 
 Важно
 -----

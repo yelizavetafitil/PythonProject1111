@@ -8,7 +8,16 @@ upstream flask_app {
 
 server {
     listen 80;
-    server_name portal.example.local;
+    server_name portal.energoprom.by;
+    return 301 https://portal.energoprom.by$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name portal.energoprom.by;
+
+    ssl_certificate     /etc/nginx/ssl/portal.energoprom.by.crt;
+    ssl_certificate_key /etc/nginx/ssl/portal.energoprom.by.key;
 
     client_max_body_size 50m;
 
@@ -18,7 +27,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Proto https;
         proxy_redirect off;
         proxy_read_timeout 120s;
     }

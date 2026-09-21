@@ -122,6 +122,8 @@
     <button class="btn-login" onclick="login()">Войти</button>
 </div>
 <script>
+    const aiReturnUrl = {{ (ai_return_url or '')|tojson }};
+
     async function login() {
         const usernameInput = document.getElementById('u');
         const passwordInput = document.getElementById('p');
@@ -134,10 +136,14 @@
         loginBtn.disabled = true;
         loginBtn.textContent = 'Проверка...';
         try {
-            const r = await fetch('/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username:u, password:p})});
+            const r = await fetch('/login', {
+                method:'POST',
+                headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({username:u, password:p, return_url:aiReturnUrl})
+            });
             const data = await r.json().catch(() => ({}));
             if (r.ok && data.success) {
-                location.href = '/';
+                location.href = data.redirect_url || '/';
                 return;
             }
             err.textContent = data.error || 'Не удалось войти. Проверьте данные AD.';
