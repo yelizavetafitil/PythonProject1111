@@ -2446,7 +2446,10 @@ def ai_assistant_page():
     username = session.get('username')
     if not can_access_portal_path(username, '/ai-assistant'):
         return redirect(url_for('index'))
-    return redirect(AI_ASSISTANT_PUBLIC_URL, code=302)
+    # Always refresh the AI-side session. Portal and AI cookies are isolated by
+    # hostname, so opening the AI root directly could otherwise retain the
+    # identity of a user who signed out of the portal earlier.
+    return redirect(f"{AI_ASSISTANT_PUBLIC_URL.rstrip('/')}/sso-start", code=302)
 
 
 @app.route('/tabel')
@@ -2490,6 +2493,8 @@ def logout():
     if login in _ad_groups_cache:
         _ad_groups_cache.pop(login, None)
     session.clear()
+    if AI_SSO_SHARED_SECRET:
+        return redirect(f"{AI_ASSISTANT_PUBLIC_URL.rstrip('/')}/sso-logout", code=302)
     return redirect(url_for('login_page'))
 
 

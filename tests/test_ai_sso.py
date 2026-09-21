@@ -77,14 +77,24 @@ class PortalAiSsoTests(unittest.TestCase):
         self.assertTrue(data['redirect_url'].startswith('https://ai.energoprom.by/sso-login?'))
         self.assertEqual(parse_qs(urlsplit(data['redirect_url']).query)['state'][0], 'B' * 32)
 
-    def test_ai_tile_starts_flow_at_public_ai_address(self):
+    def test_ai_tile_forces_ai_session_refresh(self):
         with self.client.session_transaction() as session:
             session['logged_in'] = True
             session['username'] = 'ivanov'
         with patch.object(portal, 'can_access_portal_path', return_value=True):
             response = self.client.get('/ai-assistant')
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers['Location'], 'https://ai.energoprom.by')
+        self.assertEqual(response.headers['Location'], 'https://ai.energoprom.by/sso-start')
+
+    def test_portal_logout_propagates_to_ai(self):
+        with self.client.session_transaction() as session:
+            session['logged_in'] = True
+            session['username'] = 'ivanov'
+        response = self.client.get('/logout')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], 'https://ai.energoprom.by/sso-logout')
+        with self.client.session_transaction() as session:
+            self.assertNotIn('username', session)
 
     def test_healthcheck_is_available_without_login(self):
         fake_connection = MagicMock()
