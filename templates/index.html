@@ -215,7 +215,6 @@
             border: 1px solid var(--border);
             border-radius: 10px;
             padding: 11px 12px;
-            transition: all 0.2s ease-in-out;
             box-shadow: var(--card-shadow);
             cursor: pointer;
             height: 100%;
@@ -223,12 +222,6 @@
             flex-direction: column;
             justify-content: flex-start;
         }
-        .resource-card:hover {
-            border-color: #98b8e5;
-            box-shadow: 0 12px 22px rgba(17, 46, 90, 0.14);
-            transform: translateY(-1px);
-        }
-
         .card-link {
             text-decoration: none;
             color: inherit;
@@ -236,6 +229,12 @@
             gap: 10px;
             align-items: flex-start;
             height: 100%;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .card-link:focus,
+        .card-link:focus-visible {
+            outline: none;
+            box-shadow: none;
         }
 
         .icon-container {
@@ -245,12 +244,6 @@
             display: flex; align-items: center; justify-content: center;
             flex-shrink: 0; border: 1px solid #dde7f5;
         }
-        .resource-card.is-just-added {
-            outline: 2px solid rgba(28, 79, 156, 0.45);
-            box-shadow: 0 0 0 4px rgba(28, 79, 156, 0.12);
-            transition: outline-color 0.8s ease, box-shadow 0.8s ease;
-        }
-
         .card-body { flex-grow: 1; min-width: 0; }
         .card-title {
             font-weight: 600;
@@ -1081,8 +1074,7 @@
         }
     }
 
-    async function loadResources(options = {}) {
-        const highlightId = options.highlightId;
+    async function loadResources() {
         const searchInput = document.getElementById('searchInput');
         const q = searchInput ? searchInput.value : '';
         const res = await fetch(`/get_resources?search=${encodeURIComponent(q)}&_=${Date.now()}`, {
@@ -1118,14 +1110,6 @@
                 animation: 150,
                 onEnd: saveOrder,
             }));
-        }
-        if (highlightId) {
-            const card = grid.querySelector(`.resource-card[data-id="${highlightId}"]`);
-            if (card) {
-                card.classList.add('is-just-added');
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                setTimeout(() => card.classList.remove('is-just-added'), 1600);
-            }
         }
     }
 
@@ -1352,7 +1336,7 @@
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput && searchInput.value.trim()) searchInput.value = '';
                 await loadCategories();
-                await loadResources({ highlightId: data.id });
+                await loadResources();
                 bootstrap.Modal.getInstance(document.getElementById('addModal'))?.hide();
             } finally {
                 if (submitBtn) submitBtn.disabled = false;
@@ -1379,7 +1363,7 @@
                     return;
                 }
                 await loadCategories();
-                await loadResources({ highlightId: Number(form.dataset.id) });
+                await loadResources();
                 bootstrap.Modal.getInstance(document.getElementById('editModal'))?.hide();
             } finally {
                 if (submitBtn) submitBtn.disabled = false;

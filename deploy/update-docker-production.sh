@@ -48,6 +48,27 @@ require_value AI_ASSISTANT_PUBLIC_URL
 require_value AI_ASSISTANT_CALLBACK_URL
 chmod 600 "$ENV_FILE"
 
+tabel_host_mount="$(read_value "$ENV_FILE" TABEL_HOST_MOUNT)"
+tabel_host_mount="${tabel_host_mount:-/mnt/tabel}"
+tabel_require_mount="$(read_value "$ENV_FILE" TABEL_REQUIRE_MOUNT)"
+tabel_require_mount="${tabel_require_mount:-1}"
+if [[ "$tabel_require_mount" == "1" ]]; then
+  if [[ ! -d "$tabel_host_mount" ]]; then
+    echo "Не найден каталог табелей на сервере: $tabel_host_mount" >&2
+    echo "Сначала смонтируйте //srv-doc/ТАБЕЛЬ (см. deploy/linux-tabel-cifs.example.md)." >&2
+    exit 1
+  fi
+  if command -v mountpoint >/dev/null 2>&1 && ! mountpoint -q "$tabel_host_mount"; then
+    echo "$tabel_host_mount существует, но не является подключённой сетевой папкой." >&2
+    echo "Смонтируйте //srv-doc/ТАБЕЛЬ; пустую локальную папку Docker использовать не будет." >&2
+    exit 1
+  fi
+  if [[ ! -r "$tabel_host_mount" || ! -x "$tabel_host_mount" ]]; then
+    echo "Нет прав на чтение каталога табелей: $tabel_host_mount" >&2
+    exit 1
+  fi
+fi
+
 compose=(docker compose --env-file "$ENV_FILE")
 "${compose[@]}" config --quiet
 

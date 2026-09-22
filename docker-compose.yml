@@ -22,11 +22,21 @@ services:
       AI_ASSISTANT_CALLBACK_URL: ${AI_ASSISTANT_CALLBACK_URL:-https://ai.energoprom.by/sso-login}
       AI_SSO_SHARED_SECRET: ${AI_SSO_SHARED_SECRET:-}
       AI_SSO_MAX_AGE_SEC: ${AI_SSO_MAX_AGE_SEC:-300}
+      # Windows-путь из настроек приложения на Linux разрешается в этот mount.
+      TABEL_LINUX_DEFAULT_BASE: /mnt/tabel
     volumes:
       - ./database.db:/app/database.db
       - ./tabel_portal_cache.json:/app/tabel_portal_cache.json
       # Новостные изображения не теряются при пересоздании контейнера.
       - ./static/uploads/news:/app/static/uploads/news
+      # Сетевая папка табелей монтируется на хосте и передаётся контейнеру только для чтения.
+      # create_host_path=false не позволяет Docker молча создать пустую папку вместо CIFS mount.
+      - type: bind
+        source: ${TABEL_HOST_MOUNT:-/mnt/tabel}
+        target: /mnt/tabel
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test:
         - CMD
