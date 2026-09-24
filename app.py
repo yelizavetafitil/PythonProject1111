@@ -452,6 +452,14 @@ def _scan_tabel_base_dir():
                 full_path = join_tabel_path(root, filename)
                 found_files.add(full_path)
                 stats['files_matched'] += 1
+                if full_path.lower().endswith('.xls') and xlrd is None:
+                    stats['files_failed'] += 1
+                    errors.append({
+                        'stage': 'read_excel',
+                        'path': full_path,
+                        'message': 'Для чтения файлов .xls не установлена библиотека xlrd',
+                    })
+                    continue
                 try:
                     current_mtime = os.path.getmtime(full_path)
                 except OSError as exc:
@@ -2553,6 +2561,8 @@ def tabel_meta():
             'leaders_file_exists': path_status['leaders_file_exists'],
             'setup_hint': path_status['setup_hint'],
             'last_smb': dict(TABEL_LAST_SMB_CONNECT) if TABEL_LAST_SMB_CONNECT else None,
+            'scan_stats': dict(TABEL_LAST_SCAN_STATS),
+            'scan_errors': list(TABEL_LAST_SCAN_ERRORS[-20:]),
         }
     })
 
